@@ -1,0 +1,95 @@
+# =========================
+# Environment / Secrets
+# =========================
+
+.env
+.env.*
+!.env.example
+
+
+# =========================
+# Python
+# =========================
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+.venv/
+venv/
+env/
+ENV/
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+
+# =========================
+# Database
+# =========================
+
+*.db
+*.sqlite
+*.sqlite3
+
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+
+
+# =========================
+# Voice Recordings
+# =========================
+
+Voice_Samples/*
+!Voice_Samples/.gitkeep
+
+
+# =========================
+# Generated Reports
+# =========================
+
+Generated_Reports/*
+!Generated_Reports/.gitkeep
+
+
+# =========================
+# Exports
+# =========================
+
+data/exports/*
+!data/exports/.gitkeep
+
+
+# =========================
+# Temporary Files
+# =========================
+
+*.wav
+*.mp3
+*.webm
+*.ogg
+*.m4a
+*.tmp
+*.temp
+
+
+# =========================
+# IDE / Editor
+# =========================
+
+.vscode/
+.idea/
+
+*.swp
+*.swo
+
+
+# =========================
+# OS Files
+# =========================
+
+.DS_Store
+Thumbs.db
+desktop.ini

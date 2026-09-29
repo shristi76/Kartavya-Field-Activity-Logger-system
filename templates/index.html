@@ -1,0 +1,472 @@
+<!doctype html>
+
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>Field Activity Logger</title>
+
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}"
+    />
+  </head>
+
+  <body>
+    <div class="app-shell">
+      <!-- =========================
+     TOP NAVIGATION
+========================== -->
+      <header class="topbar">
+        <div class="brand">
+          <div>
+            <div class="brand-name">Field Activity</div>
+
+            <div class="brand-subtitle">Operations Workspace</div>
+          </div>
+        </div>
+      </header>
+
+      <!-- =========================
+     MAIN CONTENT
+========================== -->
+      <main class="main-content">
+        <!-- PAGE INTRO -->
+        <section class="page-intro">
+          <div>
+            <span class="eyebrow"> FIELD OPERATIONS </span>
+
+            <h1>Field Activity Logger</h1>
+
+            <p>
+              Capture field updates, review extracted information, and maintain
+              accurate records for reporting.
+            </p>
+          </div>
+        </section>
+
+        <!-- =========================
+         DASHBOARD
+    ========================== -->
+        <section class="dashboard-grid">
+          <!-- =========================
+             CARD 01 — FIELD WORKER
+        ========================== -->
+          <article class="dashboard-card worker-card">
+            <div class="card-header">
+              <div class="card-title-area">
+                <div class="step-number">01</div>
+
+                <div>
+                  <h2>Field Worker</h2>
+
+                  <p>Identify the person submitting this activity.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="card-body">
+              <div class="form-group">
+                <label for="speakerId"> Worker ID / Name </label>
+
+                <input
+                  type="text"
+                  id="speakerId"
+                  name="speakerId"
+                  autocomplete="off"
+                  placeholder="Enter worker name or ID"
+                />
+
+                <span class="field-hint">
+                  Use the registered field worker ID or name.
+                </span>
+              </div>
+            </div>
+          </article>
+
+          <!-- =========================
+             CARD 02 — RECORDING
+        ========================== -->
+          <article class="dashboard-card recording-card">
+            <div class="card-header">
+              <div class="card-title-area">
+                <div class="step-number">02</div>
+
+                <div>
+                  <h2>Record Activity</h2>
+
+                  <p>Record the field update in Hindi.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="card-body">
+              <div class="recording-area">
+                <button type="button" id="recordButton" class="btn btn-record">
+                  Record Voice
+                </button>
+
+                <div
+                  id="recordingIndicator"
+                  class="recording-indicator"
+                  style="display: none"
+                >
+                  <span class="recording-dot"></span>
+                  Recording...
+                </div>
+              </div>
+
+              <div
+                id="audioPreview"
+                class="audio-preview"
+                style="display: none"
+              >
+                <div class="audio-header">Recorded Audio</div>
+
+                <audio id="audioPlayer" controls></audio>
+              </div>
+            </div>
+          </article>
+
+          <!-- =========================
+             CARD 03 — TRANSCRIPTION
+        ========================== -->
+          <article class="dashboard-card transcription-card">
+            <div class="card-header">
+              <div class="card-title-area">
+                <div class="step-number">03</div>
+
+                <div>
+                  <h2>Hindi Transcription</h2>
+
+                  <p>Review or enter the Hindi activity description.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="card-body">
+              <div class="form-group">
+                <label for="hindiText"> Activity Description </label>
+
+                <textarea
+                  id="hindiText"
+                  rows="6"
+                  placeholder="Speak in Hindi or type Hindi here..."
+                ></textarea>
+              </div>
+
+              <div class="card-footer">
+                <span class="footer-hint">
+                  Review the transcription before processing.
+                </span>
+
+                <button
+                  type="button"
+                  id="processButton"
+                  class="btn btn-primary"
+                >
+                  Process Activity
+                </button>
+              </div>
+            </div>
+          </article>
+
+          <!-- =========================
+             CARD 04 — EXTRACTED DATA
+        ========================== -->
+          <article
+            class="dashboard-card extracted-card"
+            id="extractedSection"
+            style="display: none"
+          >
+            <div class="card-header">
+              <div class="card-title-area">
+                <div class="step-number">04</div>
+
+                <div>
+                  <h2>Extracted Information</h2>
+
+                  <p>Review the extracted information before saving.</p>
+                </div>
+              </div>
+
+              <span class="review-badge"> Review Required </span>
+            </div>
+
+            <div class="card-body">
+              <div class="result-grid">
+                <div class="result-box">
+                  <label for="translatedText"> English Translation </label>
+
+                  <textarea
+                    id="translatedText"
+                    class="result-editor"
+                    rows="4"
+                    placeholder="English translation..."
+                  ></textarea>
+                </div>
+
+                <div class="result-box">
+                  <label for="activityText"> Activity </label>
+
+                  <textarea
+                    id="activityText"
+                    class="result-editor"
+                    rows="4"
+                    placeholder="Activity..."
+                  ></textarea>
+                </div>
+
+                <div class="result-box">
+                  <label for="beneficiariesText"> Beneficiaries </label>
+
+                  <textarea
+                    id="beneficiariesText"
+                    class="result-editor"
+                    rows="4"
+                    placeholder="Beneficiaries..."
+                  ></textarea>
+                </div>
+
+                <div class="result-box">
+                  <label for="locationText"> Location </label>
+
+                  <textarea
+                    id="locationText"
+                    class="result-editor"
+                    rows="4"
+                    placeholder="Location..."
+                  ></textarea>
+                </div>
+
+                <div class="result-box photo-upload-box">
+                  <label for="activityPhoto"> Activity Photo </label>
+
+                  <input
+                    type="file"
+                    id="activityPhoto"
+                    accept="image/jpeg,image/png"
+                  />
+
+                  <img
+                    id="activityPhotoPreview"
+                    class="photo-preview"
+                    alt="Selected activity photo preview"
+                    style="display: none"
+                  />
+                </div>
+              </div>
+
+              <div class="card-footer save-footer">
+                <span class="footer-hint">
+                  You can edit any extracted field before saving.
+                </span>
+
+                <button type="button" id="saveButton" class="btn btn-success">
+                  Save Reviewed Activity
+                </button>
+              </div>
+            </div>
+          </article>
+
+          <!-- =========================
+             CARD 05 — ACTIVITIES
+        ========================== -->
+          <article class="dashboard-card activities-card">
+            <div class="card-header">
+              <div class="card-title-area">
+                <div class="step-number">05</div>
+
+                <div>
+                  <h2>Recent Activities</h2>
+
+                  <p>Latest saved field activities.</p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                id="refreshButton"
+                class="btn btn-secondary"
+              >
+                Refresh
+              </button>
+            </div>
+
+            <div class="card-body table-body">
+              <div class="activity-summary">
+            
+
+                <div class="summary-item">
+                  <span class="summary-label"> Status </span>
+
+                  <strong class="summary-status"> Active </strong>
+                </div>
+              </div>
+
+              <div class="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Date &amp; Time</th>
+                      <th>Worker</th>
+                      <th>Recording</th>
+                      <th>Activity</th>
+                      <th>Beneficiaries</th>
+                      <th>Location</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+
+                  <tbody id="activitiesTableBody">
+                    <tr>
+                      <td colspan="8" class="empty-state">
+                        Loading activities...
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </article>
+
+          <!-- =========================
+             CARD 06 — REPORTS
+        ========================== -->
+          <article class="dashboard-card report-card">
+            <div class="card-header">
+              <div class="card-title-area">
+                <div class="step-number">06</div>
+
+                <div>
+                  <h2>Generate Report</h2>
+
+                  <p>Export field activity records for reporting.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="card-body">
+              <div class="report-grid">
+                <div class="form-group">
+                  <label for="reportType"> Report Type </label>
+
+                  <select id="reportType">
+                    <option value="monthly">Monthly</option>
+
+                    <option value="custom">Custom Date Range</option>
+
+                    <option value="yearly">Yearly</option>
+                  </select>
+                </div>
+
+                <!-- MONTHLY -->
+
+                <div id="monthlyOptions" class="report-options">
+                  <div class="form-group">
+                    <label for="reportMonth"> Month </label>
+
+                    <input type="month" id="reportMonth" />
+                  </div>
+                </div>
+
+                <!-- YEARLY -->
+
+                <div
+                  id="yearlyOptions"
+                  class="report-options"
+                  style="display: none"
+                >
+                  <div class="form-group">
+                    <label for="reportYear"> Year </label>
+
+                    <input
+                      type="number"
+                      id="reportYear"
+                      min="2000"
+                      max="2100"
+                      placeholder="2026"
+                    />
+                  </div>
+                </div>
+
+                <!-- CUSTOM DATE -->
+
+                <div
+                  id="customOptions"
+                  class="report-options"
+                  style="display: none"
+                >
+                  <div class="date-grid">
+                    <div class="form-group">
+                      <label for="startDate"> Start Date </label>
+
+                      <input type="date" id="startDate" />
+                    </div>
+
+                    <div class="form-group">
+                      <label for="endDate"> End Date </label>
+
+                      <input type="date" id="endDate" />
+                    </div>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label for="reportFormat"> Export Format </label>
+
+                  <select id="reportFormat">
+                    <option value="pdf">PDF</option>
+
+                    <option value="excel">Excel</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="card-footer">
+                <span class="footer-hint">
+                  Generate a downloadable report from saved activities.
+                </span>
+
+                <button
+                  type="button"
+                  id="generateReportButton"
+                  class="btn btn-primary"
+                >
+                  Generate Report
+                </button>
+              </div>
+
+              <div
+                id="reportResult"
+                class="status-message"
+                style="display: none"
+              ></div>
+            </div>
+          </article>
+        </section>
+
+        <!-- GLOBAL STATUS -->
+
+        <div
+          id="statusMessage"
+          class="status-message"
+          style="display: none"
+        ></div>
+      </main>
+
+      <!-- =========================
+     FOOTER
+========================== -->
+      <footer class="app-footer">
+        <span> Field Activity Logging System </span>
+
+        <span> Secure Operations Workspace </span>
+      </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  </body>
+</html>

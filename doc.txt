@@ -1,0 +1,5 @@
+step 1. copy the folder and open in vs code
+step 2. pip install -r requirements.txt
+step 3. add api key in .env file
+step 4. run in terminal->  python app.py 
+step 5. (optional) agr koi error ata hai (jo ki ayega hi) toh chatgpt kr lena :)
