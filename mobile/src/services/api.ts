@@ -128,11 +128,16 @@ export async function updateActivity(
   activityId: number,
   data: {
     speaker_id: string;
+    worker_name: string;
+    organization: string;
+    district: string;
     hindi_text: string;
     translated_text: string;
     activity: string;
     beneficiaries: string;
     location: string;
+    audio_file?: string | null;
+    photo_file?: string | null;
   }
 ) {
   const response = await fetch(
@@ -149,6 +154,7 @@ export async function updateActivity(
 
   return handleResponse(response);
 }
+
 
 export async function deleteActivity(activityId: number) {
   const response = await fetch(

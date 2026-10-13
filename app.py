@@ -65,6 +65,28 @@ initialize_database()
 
 
 # ============================================================
+# Helper Functions
+# ============================================================
+
+def json_error(message, status_code=400):
+    """Return a consistent JSON error response."""
+    return jsonify({
+        "success": False,
+        "error": message,
+    }), status_code
+
+
+def clean_text(data, field):
+    """Return a trimmed string for a request field."""
+    return str(data.get(field) or "").strip()
+
+
+def safe_file_path(directory, filename):
+    """Resolve a filename inside a specific directory."""
+    return directory / Path(filename).name
+
+
+# ============================================================
 # Frontend
 # ============================================================
 
@@ -93,7 +115,7 @@ def health():
 def get_activities():
     try:
         limit = request.args.get("limit", default=20, type=int)
-        limit = min(max(limit, 1), 100)
+        limit = min(max(limit or 20, 1), 100)
 
         logs = get_recent_logs(limit)
 
@@ -102,13 +124,9 @@ def get_activities():
             "data": [dict(log) for log in logs],
         })
 
-    except Exception as error:
-        print("Get activities error:", error)
-
-        return jsonify({
-            "success": False,
-            "error": str(error),
-        }), 500
+    except Exception:
+        app.logger.exception("Get activities error")
+        return json_error("Could not retrieve activities", 500)
 
 
 # ============================================================
@@ -121,23 +139,16 @@ def get_activity(log_id):
         log = get_log_by_id(log_id)
 
         if not log:
-            return jsonify({
-                "success": False,
-                "error": "Activity not found",
-            }), 404
+            return json_error("Activity not found", 404)
 
         return jsonify({
             "success": True,
             "data": dict(log),
         })
 
-    except Exception as error:
-        print("Get activity error:", error)
-
-        return jsonify({
-            "success": False,
-            "error": str(error),
-        }), 500
+    except Exception:
+        app.logger.exception("Get activity error")
+        return json_error("Could not retrieve activity", 500)
 
 
 # ============================================================
@@ -148,19 +159,13 @@ def get_activity(log_id):
 def process_activity():
     data = request.get_json(silent=True)
 
-    if not data:
-        return jsonify({
-            "success": False,
-            "error": "Invalid JSON request",
-        }), 400
+    if not isinstance(data, dict):
+        return json_error("Invalid JSON request")
 
-    hindi_text = str(data.get("hindi_text") or "").strip()
+    hindi_text = clean_text(data, "hindi_text")
 
     if not hindi_text:
-        return jsonify({
-            "success": False,
-            "error": "Hindi text is required",
-        }), 400
+        return json_error("Hindi text is required")
 
     try:
         result = parse_activity_with_gemini(hindi_text)
@@ -170,13 +175,9 @@ def process_activity():
             "data": result,
         })
 
-    except Exception as error:
-        print("Text processing error:", error)
-
-        return jsonify({
-            "success": False,
-            "error": str(error),
-        }), 500
+    except Exception:
+        app.logger.exception("Text processing error")
+        return json_error("Could not process the Hindi text", 500)
 
 
 # ============================================================
@@ -187,36 +188,32 @@ def process_activity():
 def create_activity():
     data = request.get_json(silent=True)
 
-    if not data:
-        return jsonify({
-            "success": False,
-            "error": "Invalid JSON request",
-        }), 400
+    if not isinstance(data, dict):
+        return json_error("Invalid JSON request")
 
-    speaker_id = str(data.get("speaker_id") or "").strip()
-    hindi_text = str(data.get("hindi_text") or "").strip()
+    speaker_id = clean_text(data, "speaker_id")
+    hindi_text = clean_text(data, "hindi_text")
 
     if not speaker_id:
-        return jsonify({
-            "success": False,
-            "error": "Speaker ID is required",
-        }), 400
+        return json_error("Worker ID is required")
 
     if not hindi_text:
-        return jsonify({
-            "success": False,
-            "error": "Hindi text is required",
-        }), 400
+        return json_error("Hindi text is required")
 
-    # Save the reviewed values supplied by the mobile app.
-    # Do not call Gemini again or replace user edits.
-    translated_text = str(data.get("translated_text") or "").strip()
-    activity = str(data.get("activity") or "").strip()
-    beneficiaries = str(data.get("beneficiaries") or "").strip()
-    location = str(data.get("location") or "").strip()
+    # Save reviewed values supplied by the frontend.
+    # Do not call Gemini again or overwrite user edits.
+    translated_text = clean_text(data, "translated_text")
+    activity = clean_text(data, "activity")
+    beneficiaries = clean_text(data, "beneficiaries")
+    location = clean_text(data, "location")
 
-    audio_file = data.get("audio_file") or None
-    photo_file = data.get("photo_file") or None
+    # New fields
+    worker_name = clean_text(data, "worker_name")
+    organization = clean_text(data, "organization")
+    district = clean_text(data, "district")
+
+    audio_file = clean_text(data, "audio_file") or None
+    photo_file = clean_text(data, "photo_file") or None
 
     try:
         log_id = save_log(
@@ -228,9 +225,19 @@ def create_activity():
             beneficiaries=beneficiaries,
             location=location,
             photo_file=photo_file,
+            worker_name=worker_name,
+            organization=organization,
+            district=district,
         )
 
         saved_log = get_log_by_id(log_id)
+
+        if not saved_log:
+            app.logger.error(
+                "Activity %s was saved but could not be retrieved",
+                log_id,
+            )
+            return json_error("Activity saved but could not be retrieved", 500)
 
         return jsonify({
             "success": True,
@@ -238,13 +245,9 @@ def create_activity():
             "data": dict(saved_log),
         }), 201
 
-    except Exception as error:
-        print("Activity save error:", error)
-
-        return jsonify({
-            "success": False,
-            "error": str(error),
-        }), 500
+    except Exception:
+        app.logger.exception("Activity save error")
+        return json_error("Could not save activity", 500)
 
 
 # ============================================================
@@ -255,26 +258,17 @@ def create_activity():
 def edit_activity(log_id):
     data = request.get_json(silent=True)
 
-    if not data:
-        return jsonify({
-            "success": False,
-            "error": "Invalid JSON request",
-        }), 400
+    if not isinstance(data, dict):
+        return json_error("Invalid JSON request")
 
-    speaker_id = str(data.get("speaker_id") or "").strip()
-    hindi_text = str(data.get("hindi_text") or "").strip()
+    speaker_id = clean_text(data, "speaker_id")
+    hindi_text = clean_text(data, "hindi_text")
 
     if not speaker_id:
-        return jsonify({
-            "success": False,
-            "error": "Speaker ID is required",
-        }), 400
+        return json_error("Worker ID is required")
 
     if not hindi_text:
-        return jsonify({
-            "success": False,
-            "error": "Hindi text is required",
-        }), 400
+        return json_error("Hindi text is required")
 
     try:
         updated = update_log(
@@ -282,28 +276,39 @@ def edit_activity(log_id):
             {
                 "speaker_id": speaker_id,
                 "hindi_text": hindi_text,
-                "translated_text": str(
-                    data.get("translated_text") or ""
-                ).strip(),
-                "activity": str(
-                    data.get("activity") or ""
-                ).strip(),
-                "beneficiaries": str(
-                    data.get("beneficiaries") or ""
-                ).strip(),
-                "location": str(
-                    data.get("location") or ""
-                ).strip(),
+                "translated_text": clean_text(
+                    data, "translated_text"
+                ),
+                "activity": clean_text(
+                    data, "activity"
+                ),
+                "beneficiaries": clean_text(
+                    data, "beneficiaries"
+                ),
+                "location": clean_text(
+                    data, "location"
+                ),
+
+                # New editable fields
+                "worker_name": clean_text(
+                    data, "worker_name"
+                ),
+                "organization": clean_text(
+                    data, "organization"
+                ),
+                "district": clean_text(
+                    data, "district"
+                ),
             },
         )
 
         if not updated:
-            return jsonify({
-                "success": False,
-                "error": "Activity not found",
-            }), 404
+            return json_error("Activity not found", 404)
 
         updated_log = get_log_by_id(log_id)
+
+        if not updated_log:
+            return json_error("Updated activity could not be retrieved", 500)
 
         return jsonify({
             "success": True,
@@ -311,13 +316,9 @@ def edit_activity(log_id):
             "data": dict(updated_log),
         }), 200
 
-    except Exception as error:
-        print("Update activity error:", error)
-
-        return jsonify({
-            "success": False,
-            "error": "Could not update activity",
-        }), 500
+    except Exception:
+        app.logger.exception("Update activity error")
+        return json_error("Could not update activity", 500)
 
 
 # ============================================================
@@ -329,10 +330,7 @@ def upload_photo():
     photo = request.files.get("photo")
 
     if not photo or not photo.filename:
-        return jsonify({
-            "success": False,
-            "error": "Please select a photo",
-        }), 400
+        return json_error("Please select a photo")
 
     extension = (
         Path(photo.filename)
@@ -342,10 +340,7 @@ def upload_photo():
     )
 
     if extension not in ALLOWED_PHOTO_EXTENSIONS:
-        return jsonify({
-            "success": False,
-            "error": "Only JPG and PNG photos are supported",
-        }), 400
+        return json_error("Only JPG and PNG photos are supported")
 
     try:
         photo.stream.seek(0)
@@ -356,19 +351,14 @@ def upload_photo():
         photo.stream.seek(0)
 
     except (UnidentifiedImageError, OSError):
-        return jsonify({
-            "success": False,
-            "error": "The selected file is not a valid photo",
-        }), 400
+        return json_error("The selected file is not a valid photo")
 
     safe_name = secure_filename(photo.filename)
 
     if not safe_name:
-        return jsonify({
-            "success": False,
-            "error": "Invalid photo filename",
-        }), 400
+        return json_error("Invalid photo filename")
 
+    # Normalize the extension and avoid trusting the original path.
     filename = (
         f"{datetime.now().strftime('%Y%m%d%H%M%S%f')}_"
         f"{safe_name}"
@@ -386,13 +376,9 @@ def upload_photo():
             },
         }), 201
 
-    except Exception as error:
-        print("Photo upload error:", error)
-
-        return jsonify({
-            "success": False,
-            "error": str(error),
-        }), 500
+    except Exception:
+        app.logger.exception("Photo upload error")
+        return json_error("Could not save photo", 500)
 
 
 # ============================================================
@@ -405,23 +391,16 @@ def remove_activity(log_id):
         deleted = delete_log(log_id)
 
         if not deleted:
-            return jsonify({
-                "success": False,
-                "error": "Activity not found",
-            }), 404
+            return json_error("Activity not found", 404)
 
         return jsonify({
             "success": True,
             "message": "Activity deleted successfully",
         })
 
-    except Exception as error:
-        print("Delete activity error:", error)
-
-        return jsonify({
-            "success": False,
-            "error": str(error),
-        }), 500
+    except Exception:
+        app.logger.exception("Delete activity error")
+        return json_error("Could not delete activity", 500)
 
 
 # ============================================================
@@ -432,23 +411,24 @@ def remove_activity(log_id):
 def create_report():
     data = request.get_json(silent=True)
 
-    if not data:
-        return jsonify({
-            "success": False,
-            "error": "Invalid request",
-        }), 400
+    if not isinstance(data, dict):
+        return json_error("Invalid request")
 
-    start_date = str(data.get("start_date") or "").strip()
-    end_date = str(data.get("end_date") or "").strip()
-    speaker_id = str(data.get("speaker_id") or "").strip()
+    start_date = clean_text(data, "start_date")
+    end_date = clean_text(data, "end_date")
+    speaker_id = clean_text(data, "speaker_id")
 
     if not start_date or not end_date:
-        return jsonify({
-            "success": False,
-            "error": "Start date and end date are required",
-        }), 400
+        return json_error("Start date and end date are required")
 
     try:
+        # Validate the expected date format.
+        start = datetime.strptime(start_date, "%Y-%m-%d").date()
+        end = datetime.strptime(end_date, "%Y-%m-%d").date()
+
+        if start > end:
+            return json_error("Start date cannot be after end date")
+
         logs = get_logs_between(
             start_date,
             end_date,
@@ -456,10 +436,7 @@ def create_report():
         )
 
         if not logs:
-            return jsonify({
-                "success": False,
-                "error": "No logs found for this period",
-            }), 404
+            return json_error("No logs found for this period", 404)
 
         pdf_path = generate_pdf(
             logs=logs,
@@ -486,13 +463,12 @@ def create_report():
             },
         })
 
-    except Exception as error:
-        print("Report generation error:", error)
+    except ValueError:
+        return json_error("Dates must use YYYY-MM-DD format")
 
-        return jsonify({
-            "success": False,
-            "error": str(error),
-        }), 500
+    except Exception:
+        app.logger.exception("Report generation error")
+        return json_error("Could not generate reports", 500)
 
 
 # ============================================================
@@ -501,17 +477,18 @@ def create_report():
 
 @app.get("/api/reports/pdf/<filename>")
 def download_pdf(filename):
-    from config import REPORT_DIR
+    from config import REPORT_DIR as CONFIG_REPORT_DIR
 
-    file_path = REPORT_DIR / Path(filename).name
+    file_path = safe_file_path(CONFIG_REPORT_DIR, filename)
 
-    if not file_path.is_file():
-        return jsonify({
-            "success": False,
-            "error": "PDF not found",
-        }), 404
+    if not file_path.is_file() or file_path.suffix.lower() != ".pdf":
+        return json_error("PDF not found", 404)
 
-    return send_file(file_path, as_attachment=True)
+    return send_file(
+        file_path,
+        as_attachment=True,
+        download_name=file_path.name,
+    )
 
 
 # ============================================================
@@ -522,15 +499,19 @@ def download_pdf(filename):
 def download_excel(filename):
     from config import EXPORT_DIR
 
-    file_path = EXPORT_DIR / Path(filename).name
+    file_path = safe_file_path(EXPORT_DIR, filename)
 
-    if not file_path.is_file():
-        return jsonify({
-            "success": False,
-            "error": "Excel file not found",
-        }), 404
+    if (
+        not file_path.is_file()
+        or file_path.suffix.lower() not in {".xlsx", ".xls"}
+    ):
+        return json_error("Excel file not found", 404)
 
-    return send_file(file_path, as_attachment=True)
+    return send_file(
+        file_path,
+        as_attachment=True,
+        download_name=file_path.name,
+    )
 
 
 # ============================================================
@@ -539,17 +520,15 @@ def download_excel(filename):
 
 @app.get("/api/audio/<filename>")
 def play_audio(filename):
-    audio_path = VOICE_DIR / Path(filename).name
+    audio_path = safe_file_path(VOICE_DIR, filename)
 
     if not audio_path.is_file():
-        return jsonify({
-            "success": False,
-            "error": "Recording not found",
-        }), 404
+        return json_error("Recording not found", 404)
 
     return send_file(
         audio_path,
         as_attachment=False,
+        download_name=audio_path.name,
     )
 
 
@@ -557,22 +536,18 @@ def play_audio(filename):
 # Process Browser Audio
 # ============================================================
 
-@app.route("/api/process-audio", methods=["POST"])
+@app.post("/api/process-audio")
 def process_audio():
+    audio_path = None
+
     try:
         if "audio" not in request.files:
-            return jsonify({
-                "success": False,
-                "error": "No audio file received",
-            }), 400
+            return json_error("No audio file received")
 
         audio_file = request.files["audio"]
 
         if not audio_file.filename:
-            return jsonify({
-                "success": False,
-                "error": "Empty audio file",
-            }), 400
+            return json_error("Empty audio file")
 
         filename = (
             f"browser_"
@@ -583,15 +558,10 @@ def process_audio():
         audio_path = VOICE_DIR / filename
         audio_file.save(audio_path)
 
-        print("Audio saved:", audio_path)
-
         transcription = transcribe_audio_file(audio_path)
 
         if not transcription:
-            return jsonify({
-                "success": False,
-                "error": "Could not understand the audio",
-            }), 400
+            return json_error("Could not understand the audio")
 
         return jsonify({
             "success": True,
@@ -602,45 +572,31 @@ def process_audio():
             ),
         })
 
-    except Exception as error:
-        print("Audio processing error:", error)
-
-        return jsonify({
-            "success": False,
-            "error": str(error),
-        }), 500
+    except Exception:
+        app.logger.exception("Audio processing error")
+        return json_error("Could not process the audio", 500)
 
 
 # ============================================================
 # Mobile App - Process Voice Report
 # ============================================================
 
-@app.route("/api/report", methods=["POST"])
+@app.post("/api/report")
 def mobile_report():
     try:
-        print("MOBILE REPORT REQUEST RECEIVED")
+        app.logger.info("Mobile report request received")
 
         if "audio" not in request.files:
-            return jsonify({
-                "success": False,
-                "error": "No audio file received",
-            }), 400
+            return json_error("No audio file received")
 
         audio_file = request.files["audio"]
 
         if not audio_file.filename:
-            return jsonify({
-                "success": False,
-                "error": "Empty audio file",
-            }), 400
+            return json_error("Empty audio file")
 
-        speaker_id = request.form.get(
-            "speaker_id",
-            "mobile_worker",
+        speaker_id = (
+            request.form.get("speaker_id") or "mobile_worker"
         ).strip()
-
-        if not speaker_id:
-            speaker_id = "mobile_worker"
 
         safe_speaker_id = secure_filename(speaker_id)
 
@@ -653,42 +609,26 @@ def mobile_report():
         audio_path = VOICE_DIR / filename
         audio_file.save(audio_path)
 
-        print("Audio saved:", audio_path)
-
         transcription = transcribe_audio_file(audio_path)
 
         if not transcription:
-            return jsonify({
-                "success": False,
-                "error": "Could not understand the audio",
-            }), 400
-
-        print("Transcription:", transcription)
+            return json_error("Could not understand the audio")
 
         parsed = parse_activity_with_gemini(transcription)
 
-        print("Generated report:", parsed)
-
-        # Do not save here. The user reviews the report first.
-        response = {
+        # The user reviews and edits the report before saving.
+        # Nothing is saved to the activity database here.
+        return jsonify({
             "success": True,
             "report": parsed,
             "transcription": transcription,
             "audio_file": filename,
             "activity_id": None,
-        }
+        }), 200
 
-        print("Mobile report processed successfully")
-
-        return jsonify(response), 200
-
-    except Exception as error:
-        print("Mobile report error:", error)
-
-        return jsonify({
-            "success": False,
-            "error": str(error),
-        }), 500
+    except Exception:
+        app.logger.exception("Mobile report error")
+        return json_error("Could not process the mobile report", 500)
 
 
 # ============================================================
@@ -696,6 +636,8 @@ def mobile_report():
 # ============================================================
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
-    
-    
+    app.run(
+        host="0.0.0.0",
+        port=5000,
+        debug=True,
+    )

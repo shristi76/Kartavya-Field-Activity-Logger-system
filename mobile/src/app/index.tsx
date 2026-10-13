@@ -876,9 +876,6 @@ async function handleDownloadPdf() {
     const result = await generatePdfReport({
       start_date: formatDate(start),
       end_date: formatDate(end),
-      ...(workerId.trim()
-        ? { speaker_id: workerId.trim() }
-        : {}),
     });
 
     const filename = result.data?.pdf;
@@ -1001,38 +998,6 @@ async function handleDownloadPdf() {
             Use the ID assigned to the field worker.
           </Text>
 
-          <Text style={styles.fieldLabel}>SOCIAL WORKER NAME</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Enter social worker name"
-            placeholderTextColor="#9BAAAF"
-            value={workerName}
-            onChangeText={setWorkerName}
-            autoCapitalize="words"
-            editable={!isRecording && !isBusy}
-          />
-
-          <Text style={styles.fieldLabel}>ORGANIZATION</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Enter organization name"
-            placeholderTextColor="#9BAAAF"
-            value={organization}
-            onChangeText={setOrganization}
-            autoCapitalize="words"
-            editable={!isRecording && !isBusy}
-          />
-
-          <Text style={styles.fieldLabel}>DISTRICT</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Enter district"
-            placeholderTextColor="#9BAAAF"
-            value={district}
-            onChangeText={setDistrict}
-            autoCapitalize="words"
-            editable={!isRecording && !isBusy}
-          />
         </View>
 
         {/* 02 — Voice recording */}
@@ -1130,6 +1095,8 @@ async function handleDownloadPdf() {
             </View>
           ) : (
             <>
+             
+
               <Text style={styles.fieldLabel}>HINDI TRANSCRIPTION</Text>
               <TextInput
                 style={[styles.input, styles.multilineInput]}
@@ -1176,6 +1143,40 @@ async function handleDownloadPdf() {
                 onChangeText={setTranslatedText}
                 multiline
                 textAlignVertical="top"
+                editable={reviewFieldsEditable}
+              />
+
+               {/* Worker details can be added or changed while reviewing/editing. */}
+              <Text style={styles.fieldLabel}>SOCIAL WORKER NAME</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter social worker name"
+                placeholderTextColor="#9BAAAF"
+                value={workerName}
+                onChangeText={setWorkerName}
+                autoCapitalize="words"
+                editable={reviewFieldsEditable}
+              />
+
+              <Text style={styles.fieldLabel}>ORGANIZATION</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter organization name"
+                placeholderTextColor="#9BAAAF"
+                value={organization}
+                onChangeText={setOrganization}
+                autoCapitalize="words"
+                editable={reviewFieldsEditable}
+              />
+
+              <Text style={styles.fieldLabel}>DISTRICT</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter district"
+                placeholderTextColor="#9BAAAF"
+                value={district}
+                onChangeText={setDistrict}
+                autoCapitalize="words"
                 editable={reviewFieldsEditable}
               />
 
@@ -1542,9 +1543,8 @@ async function handleDownloadPdf() {
       </Text>
 
       <Text style={styles.comingSoonDescription}>
-        Generate a report for the last 30 days.
-        Enter a Worker ID above to filter the report
-        to that worker, or leave it blank for all workers.
+        Generate a report containing all workers' records
+        from the last 30 days.
       </Text>
     </View>
   </View>

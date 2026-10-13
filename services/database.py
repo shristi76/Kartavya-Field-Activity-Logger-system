@@ -31,6 +31,9 @@ def initialize_database():
                 activity TEXT,
                 beneficiaries TEXT,
                 location TEXT,
+                worker_name TEXT,
+                organization TEXT,
+                district TEXT,
                 photo_file TEXT
             )
             """
@@ -47,6 +50,12 @@ def initialize_database():
             cursor.execute(
                 "ALTER TABLE field_logs ADD COLUMN photo_file TEXT"
             )
+
+        for column in ("worker_name", "organization", "district"):
+            if column not in existing_columns:
+                cursor.execute(
+                    f"ALTER TABLE field_logs ADD COLUMN {column} TEXT"
+                )
 
         cursor.execute(
             """
@@ -75,7 +84,10 @@ def save_log(
     activity,
     beneficiaries,
     location,
-    photo_file
+    photo_file,
+    worker_name,
+    organization,
+    district,
 ):
     """Save one field activity log."""
     connection = get_db_connection()
@@ -94,9 +106,12 @@ def save_log(
                 activity,
                 beneficiaries,
                 location,
+                worker_name,
+                organization,
+                district,
                 photo_file
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -107,6 +122,9 @@ def save_log(
                 activity,
                 beneficiaries,
                 location,
+                worker_name,
+                organization,
+                district,
                 photo_file,
             )
         )
@@ -136,6 +154,9 @@ def get_recent_logs(limit=20):
                 activity,
                 beneficiaries,
                 location,
+                worker_name,
+                organization,
+                district,
                 photo_file
             FROM field_logs
             ORDER BY id DESC
@@ -219,7 +240,10 @@ def update_log(log_id, data):
                 translated_text = ?,
                 activity = ?,
                 beneficiaries = ?,
-                location = ?
+                location = ?,
+                worker_name = ?,
+                organization = ?,
+                district = ?
             WHERE id = ?
             """,
             (
@@ -229,6 +253,9 @@ def update_log(log_id, data):
                 data.get("activity", ""),
                 data.get("beneficiaries", ""),
                 data.get("location", ""),
+                data.get("worker_name", ""),
+                data.get("organization", ""),
+                data.get("district", ""),
                 log_id,
             )
         )
