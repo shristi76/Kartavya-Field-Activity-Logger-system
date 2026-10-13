@@ -105,7 +105,7 @@ type ActivityPayload = {
 
   village?: string;
   block?: string;
-  district?: string;
+  // district?: string;
   people_visited?: number | null;
   households_visited?: number | null;
   beneficiaries_assisted?: number | null;
