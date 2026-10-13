@@ -149,22 +149,7 @@ Give a concise description of the main activity, such as
 school inspection, household visits, community awareness,
 counselling, or a welfare survey. Base it on the statement.
 
-additional_notes:
-Include relevant details that do not fit naturally into the
-other selected fields. If no additional information exists,
-return an empty string. Do not repeat information unnecessarily.
 
-people_visited:
-The number of individual people explicitly stated to have been
-visited or spoken to. For example, "बारह लोगों से बात की"
-means 12 people. Do not use the number of households instead.
-If the number is not stated or cannot be established, return null.
-
-households_visited:
-The number of households or families explicitly stated to have
-been visited. For example, "आठ परिवारों से मिली" means 8
-households. Do not use the number of individuals instead.
-If the number is not stated or cannot be established, return null.
 
 beneficiaries_assisted:
 The number of distinct people explicitly stated to have received

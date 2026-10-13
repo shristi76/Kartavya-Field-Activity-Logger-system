@@ -615,7 +615,7 @@ def generate_pdf(
         ("Beneficiaries Assisted", "beneficiaries_assisted"),
         ("Original Hindi Statement", "hindi_text"),
         ("Translated Statement", "translated_text"),
-        ("Additional Notes", "additional_notes"),
+      
     ]
 
     for index, log in enumerate(logs, start=1):
@@ -917,7 +917,7 @@ def generate_excel(
         "Translated Statement",
         "Activity",
         "Beneficiaries Assisted",
-        "Additional Notes",
+        
     ]
 
     worksheet.append(headers)
