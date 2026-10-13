@@ -1,262 +1,397 @@
 
 import json
+import logging
+from datetime import date, datetime, timedelta
 
 from google import genai
+from google.genai import types
 
 from config import GEMINI_API_KEY, GEMINI_MODEL
 
 
-client = genai.Client(
-    api_key=GEMINI_API_KEY
-)
+# --------------------------------------------------
+# CONFIGURATION
+# --------------------------------------------------
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 AVAILABLE_MODELS = list(dict.fromkeys([
     GEMINI_MODEL,
     "gemini-2.5-flash",
-    "gemini-2.0-flash"
+    "gemini-2.0-flash",
 ]))
 
+NUMERIC_FIELDS = {
+    "people_visited",
+    "households_visited",
+    "beneficiaries_assisted",
+}
 
-def parse_activity_with_gemini(hindi_text):
-    """
-    Understand Hindi/Hinglish field-worker speech
-    and convert it into structured social-work data.
-    """
+TEXT_FIELDS = [
+    "worker_name",
+    "date",
+    "location",
+    "organization",
+    "village",
+    "block",
+    "district",
+    "translated_text",
+    "activity",
+    "issues_identified",
+    "education_related_issues",
+    "health_and_wellbeing_concerns",
+    "family_and_child_welfare_concerns",
+    "livelihood_and_financial_issues",
+    "government_scheme_and_benefit_issues",
+    "elderly_and_disability_support_needs",
+    "assistance_provided",
+    "actions_taken",
+    "referrals_made",
+    "services_or_benefits_accessed",
+    "referral_required",
+    "follow_up_required",
+    "follow_up_date",
+    "responsible_person",
+    "outcomes_and_progress",
+    "additional_notes",
+]
 
-    prompt = f"""
-You are an AI assistant for a social
-field-worker reporting system.
+ALL_FIELDS = TEXT_FIELDS + list(NUMERIC_FIELDS)
 
-A social worker or community field worker speaks
-naturally in Hindi, Hinglish, or a mixture of
-Hindi and English.
 
-The worker may describe household visits, beneficiary
-interactions, family circumstances, education,
-child welfare, elderly care, disability support,
-government welfare schemes, community development,
-livelihood challenges, referrals, services provided,
-and follow-up activities.
+# --------------------------------------------------
+# JSON SCHEMA
+# --------------------------------------------------
 
-Your job is to understand the COMPLETE statement
-and extract every useful piece of information relevant
-to social work.
+REPORT_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        field: {"type": "INTEGER", "nullable": True}
+        for field in NUMERIC_FIELDS
+    } | {
+        field: {"type": "STRING"}
+        for field in TEXT_FIELDS
+    },
+    "required": ALL_FIELDS,
+}
 
-IMPORTANT RULES:
 
-1. Understand natural spoken Hindi.
-2. Understand Hinglish and common social-work terminology.
-3. Translate the complete statement into clear English.
-4. Do NOT invent information.
-5. Do NOT guess missing information.
-6. If a field is not mentioned, return "Not mentioned".
-7. Keep all numbers accurate.
-8. Convert spoken numbers into numeric values where appropriate.
-9. Preserve beneficiary information and reported circumstances accurately.
-10. Understand different ways of saying the same thing.
-11. "बीस परिवार", "20 परिवार", and "20 families" all mean 20 families.
-12. "पांच बच्चों को स्कूल जाने में समस्या है" means 5 children are facing difficulties attending school.
-13. "तीन परिवारों को सरकारी योजना का लाभ नहीं मिला" means 3 families have not received the benefits of a government scheme.
-14. "वृद्ध व्यक्ति को पेंशन नहीं मिल रही है" means an elderly person is not receiving a pension.
-15. "अगले सप्ताह फिर से मिलने जाना है" means a follow-up visit is planned for next week.
-16. Do not create information that was not spoken.
-17. If the worker's name is mentioned, extract it.
-18. If a location is mentioned, extract it.
-19. If a village, block, district, organization, or community center is mentioned, preserve it.
-20. Extract all important social observations and beneficiary needs.
-21. Extract assistance provided, actions taken, referrals,
-    unresolved concerns, and follow-up information if mentioned.
-22. Identify the number of people or households visited
-    only when the statement provides enough information.
-23. Do not confuse the number of people visited with the
-    number of people experiencing a particular problem.
-24. Distinguish between information reported by a beneficiary,
-    observations made by the worker, and actions actually completed.
-25. Do not claim that a government benefit, service, or referral
-    was completed unless the worker explicitly says so.
-26. Do not infer a person's eligibility for a government scheme.
-27. Preserve names, dates, quantities, locations, and scheme names
-    as accurately as possible.
-28. If a date is not explicitly provided, do not assume today's date.
-29. If a field is not relevant to the described activity,
-    return "Not mentioned".
-30. Use respectful, neutral, non-judgmental language.
-31. Protect sensitive beneficiary information. Do not infer
-    personal characteristics or sensitive circumstances.
-32. If the statement contains multiple activities or concerns,
-    capture all of them without omitting important details.
-33. Keep translated_text as a faithful English translation
-    of the worker's complete statement.
-34. Keep activity as a concise description of the main
-    social-work activity performed or reported.
-35. For numeric fields, return a JSON number when explicitly
-    stated or unambiguously supported by the statement.
-    If the number is unknown or not stated, return null.
-36. Do not interpret a planned action as a completed action.
-37. If information is ambiguous or contradictory, preserve
-    the uncertainty in additional_notes instead of guessing.
+# --------------------------------------------------
+# PROMPT
+# --------------------------------------------------
 
-Return ONLY valid JSON.
-Do not include Markdown, explanations, or text outside the JSON.
+def build_prompt(hindi_text):
+    return f"""
+You are an expert AI assistant for a social-work field
+reporting system in India.
 
-Use EXACTLY this structure:
+Your task is to understand the COMPLETE statement spoken
+by a community worker in Hindi, Hinglish, or English and
+extract accurate information into the required JSON fields.
 
-{{
-    "worker_name": "",
-    "date": "",
-    "location": "",
-    "organization": "",
-    "village": "",
-    "block": "",
-    "district": "",
+Return ONLY a JSON object matching the supplied schema.
 
-    "translated_text": "",
+GENERAL RULES:
+1. Understand natural spoken Hindi, Hinglish, synonyms,
+   common speech patterns, and social-work terminology.
+2. Translate the complete statement faithfully into English
+   in the translated_text field.
+3. Do not invent or guess information.
+4. For missing text fields, return an empty string "".
+5. For missing numeric fields, return null.
+6. Numeric fields must contain integers or null, never strings.
+7. Preserve names, dates, quantities, locations, and details.
+8. Do not omit an issue merely because it belongs to more
+   than one relevant category.
+9. Separate completed actions from planned actions.
+10. Do not claim that a referral, service, benefit, or
+    resolution occurred unless explicitly supported.
+11. Do not infer eligibility for government schemes.
+12. Preserve uncertainty instead of guessing.
+13. Use respectful, neutral language.
+14. Do not put phrases such as "Not mentioned", "N/A",
+    or "Unknown" in missing text fields. Use "" instead.
+15. Do not change facts in order to fill every field.
 
-    "activity": "",
+FIELD-BY-FIELD RULES:
 
-    "people_visited": null,
-    "households_visited": null,
-    "beneficiaries_assisted": null,
+worker_name:
+The name of the reporting worker, if spoken.
 
-    "issues_identified": "",
-    "education_related_issues": "",
-    "health_and_wellbeing_concerns": "",
-    "family_and_child_welfare_concerns": "",
-    "livelihood_and_financial_issues": "",
-    "government_scheme_and_benefit_issues": "",
-    "elderly_and_disability_support_needs": "",
+date:
+The date of the reported activity. Prefer YYYY-MM-DD.
+Use the explicitly stated date. Do not silently substitute
+the current date.
 
-    "assistance_provided": "",
-    "actions_taken": "",
-    "referrals_made": "",
-    "services_or_benefits_accessed": "",
-    "referral_required": "",
+location:
+The general location of the activity, including any
+location detail explicitly stated.
 
-    "follow_up_required": "",
-    "follow_up_date": "",
-    "responsible_person": "",
+organization:
+The name of the worker's organization, if stated.
 
-    "outcomes_and_progress": "",
-    "additional_notes": ""
-}}
+village:
+The village name only. Do not copy a district name here.
 
-Hindi statement:
+block:
+The block name only, if explicitly stated.
 
+district:
+The district name only, if explicitly stated.
+
+translated_text:
+A faithful English translation of the entire original
+statement. Preserve important details and intentions.
+
+activity:
+A short description of the main activity, such as
+community survey, household visits, counselling, or
+identification of welfare issues.
+
+people_visited:
+The number of individual people visited or spoken to.
+For example, "बारह लोगों से बातचीत की" means 12.
+Do not substitute the number of households or cases.
+
+households_visited:
+The number of households or families visited.
+For example, "आठ परिवारों से मुलाकात की" means 8.
+
+beneficiaries_assisted:
+The number of distinct people explicitly stated to have
+received assistance. Do not count everyone visited,
+everyone with a problem, or everyone interviewed.
+If the count cannot be established, return null.
+
+issues_identified:
+Summarize every problem explicitly reported or observed.
+
+education_related_issues:
+Only education, school attendance, educational access,
+or school-related concerns.
+
+health_and_wellbeing_concerns:
+Health, healthcare access, physical wellbeing, or
+mental wellbeing concerns explicitly stated.
+
+family_and_child_welfare_concerns:
+Child protection, family welfare, neglect, or child-related
+concerns explicitly stated.
+
+livelihood_and_financial_issues:
+Employment, livelihood, income, debt, or financial
+difficulties explicitly stated. Do not infer poverty merely
+because a benefit has not been received.
+
+government_scheme_and_benefit_issues:
+Problems related to ration cards, pensions, government
+schemes, benefit applications, or benefit delivery.
+Include the number of affected families when stated.
+
+elderly_and_disability_support_needs:
+Explicitly stated elderly-care or disability-related needs.
+A pension problem may be included here if the statement
+identifies the person as elderly or identifies elderly care.
+Do not infer a disability.
+
+assistance_provided:
+Help actually provided by the worker. Recording a complaint
+is an action, but does not mean the underlying problem
+has been resolved or financial assistance was provided.
+
+actions_taken:
+Actions completed, such as visiting families, interviewing
+people, documenting problems, or contacting an official.
+Keep planned actions clearly labelled as planned.
+
+referrals_made:
+Referrals already completed to an officer, service,
+hospital, or organization. A plan to contact an officer
+is not a completed referral.
+
+services_or_benefits_accessed:
+Services or benefits explicitly received or accessed.
+A requested or delayed benefit is not an accessed benefit.
+
+referral_required:
+Use "Yes" if a referral is explicitly required or clearly
+indicated. If unclear, return "".
+Do not state that a referral has already been completed
+when only a future contact is planned.
+
+follow_up_required:
+Use "Yes" if another visit, check, or review is planned.
+Otherwise use "No" only if the statement explicitly
+indicates that follow-up is unnecessary. If unclear, use "".
+
+follow_up_date:
+The explicitly stated follow-up date. Resolve relative dates
+only when the reference date is clear.
+If "next Monday" is stated and the activity date is
+2026-10-13, the follow-up date is 2026-10-19.
+
+responsible_person:
+The person explicitly identified as responsible for follow-up.
+If the worker says "I will revisit", use the worker's name
+when available.
+
+outcomes_and_progress:
+Report confirmed outcomes and progress. If issues remain
+unresolved or the outcome is not yet known, say so accurately.
+
+additional_notes:
+Relevant information not captured elsewhere, including
+ambiguity and details that require verification.
+
+CLASSIFICATION EXAMPLE:
+
+Input:
+"मेरा नाम सुनीता देवी है। मैं 13 अक्टूबर 2026 को पटना
+जिले के एक गाँव में गई। मैंने आठ परिवारों से मुलाकात की
+और बारह लोगों से बातचीत की। तीन परिवारों ने राशन कार्ड
+की समस्या बताई और एक परिवार को वृद्धावस्था पेंशन नहीं
+मिल रही है। मैंने समस्याएँ दर्ज कीं और पंचायत अधिकारी
+से संपर्क करने की योजना बनाई। मैं अगले सोमवार फिर जाऊँगी।"
+
+Expected interpretation:
+- worker_name: Sunita Devi
+- date: 2026-10-13
+- district: Patna
+- people_visited: 12
+- households_visited: 8
+- beneficiaries_assisted: null, unless assistance recipients
+  are explicitly identified and counted
+- issues_identified: ration card problems affecting three
+  families and a pension problem affecting one family
+- government_scheme_and_benefit_issues: include both issues
+- assistance_provided: document the problems, without
+  claiming that the benefits were delivered
+- actions_taken: visited families, spoke with people, and
+  recorded their problems
+- referrals_made: empty because contact is only planned
+- referral_required: Yes if the planned official contact
+  clearly indicates a referral is needed
+- follow_up_required: Yes
+- follow_up_date: 2026-10-19
+- responsible_person: Sunita Devi
+- outcomes_and_progress: resolution has not yet been confirmed
+
+Do not copy this example's values unless supported by the
+actual input statement.
+
+STATEMENT TO PROCESS:
 {hindi_text}
 """
 
-    try:
 
-        response = None
-        last_error = None
+# --------------------------------------------------
+# NORMALIZE AND VALIDATE GEMINI RESPONSE
+# --------------------------------------------------
 
-        for model in AVAILABLE_MODELS:
+def normalize_report(data, original_text):
+    if not isinstance(data, dict):
+        raise ValueError("Gemini response must be a JSON object.")
 
-            try:
+    result = {}
 
-                response = client.models.generate_content(
-                    model=model,
-                    contents=prompt
+    for field in ALL_FIELDS:
+        value = data.get(field)
+
+        if field in NUMERIC_FIELDS:
+            if value is None or value == "":
+                result[field] = None
+            elif isinstance(value, bool):
+                result[field] = None
+            elif isinstance(value, int):
+                result[field] = value
+            elif isinstance(value, float) and value.is_integer():
+                result[field] = int(value)
+            else:
+                # Do not silently convert unexpected values
+                # into a potentially incorrect count.
+                logger.warning(
+                    "Invalid numeric value for %s: %r",
+                    field,
+                    value,
                 )
+                result[field] = None
+        else:
+            if value is None:
+                result[field] = ""
+            elif isinstance(value, str):
+                result[field] = value.strip()
+            else:
+                result[field] = str(value).strip()
 
-                break
+    # Keep the original statement available in case the
+    # caller needs to compare or audit the extraction.
+    result["translated_text"] = result["translated_text"].strip()
 
-            except Exception as error:
+    return result
 
-                last_error = error
 
-        if response is None:
+# --------------------------------------------------
+# MAIN EXTRACTION FUNCTION
+# --------------------------------------------------
 
-            raise RuntimeError(
-                f"All Gemini models failed: {last_error}"
+def parse_activity_with_gemini(hindi_text):
+    """
+    Translate a Hindi/Hinglish statement and extract
+    structured social-work report fields.
+
+    Returns a dictionary containing the fixed report schema.
+    Raises RuntimeError if all configured models fail.
+    """
+
+    if not isinstance(hindi_text, str) or not hindi_text.strip():
+        raise ValueError("The Hindi statement must not be empty.")
+
+    prompt = build_prompt(hindi_text.strip())
+    errors = []
+
+    for model in AVAILABLE_MODELS:
+        try:
+            logger.info("Trying Gemini model: %s", model)
+
+            response = client.models.generate_content(
+                model=model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=REPORT_SCHEMA,
+                    temperature=0.1,
+                ),
             )
 
-        if not response.text:
+            raw_text = response.text
 
-            raise RuntimeError(
-                "Gemini returned no text."
+            if not raw_text or not raw_text.strip():
+                raise ValueError("Gemini returned an empty response.")
+
+            # Structured output should already be JSON.
+            # json.loads still validates the returned content.
+            data = json.loads(raw_text.strip())
+
+            report = normalize_report(data, hindi_text)
+
+            logger.info(
+                "Successfully extracted report using %s",
+                model,
             )
 
-        raw_text = response.text.strip()
+            return report
 
-        # Remove markdown JSON fences if Gemini adds them
-        if raw_text.startswith("```json"):
+        except Exception as error:
+            logger.exception(
+                "Gemini extraction failed with model %s",
+                model,
+            )
+            errors.append(f"{model}: {error}")
 
-            raw_text = raw_text[7:]
-
-        elif raw_text.startswith("```"):
-
-            raw_text = raw_text[3:]
-
-        if raw_text.endswith("```"):
-
-            raw_text = raw_text[:-3]
-
-        raw_text = raw_text.strip()
-
-        data = json.loads(raw_text)
-
-        required_fields = [
-            "worker_name",
-            "date",
-            "location",
-            "organization",
-            "village",
-            "block",
-            "district",
-            "translated_text",
-            "activity",
-            "people_visited",
-            "households_visited",
-            "beneficiaries_assisted",
-            "issues_identified",
-            "education_related_issues",
-            "health_and_wellbeing_concerns",
-            "family_and_child_welfare_concerns",
-            "livelihood_and_financial_issues",
-            "government_scheme_and_benefit_issues",
-            "elderly_and_disability_support_needs",
-            "assistance_provided",
-            "actions_taken",
-            "referrals_made",
-            "services_or_benefits_accessed",
-            "referral_required",
-            "follow_up_required",
-            "follow_up_date",
-            "responsible_person",
-            "outcomes_and_progress",
-            "additional_notes"
-        ]
-
-        for field in required_fields:
-
-            if field not in data:
-
-                data[field] = "Not mentioned"
-
-            if data[field] is None:
-
-                if field in [
-                    "people_visited",
-                    "households_visited",
-                    "beneficiaries_assisted"
-                ]:
-                    data[field] = None
-
-                else:
-                    data[field] = "Not mentioned"
-
-        return data
-
-    except json.JSONDecodeError as error:
-
-        raise RuntimeError(
-            f"Gemini returned invalid JSON: {error}"
-        )
-
-    except Exception as error:
-
-        raise RuntimeError(
-            f"Gemini processing failed: {error}"
-        )
+    raise RuntimeError(
+        "All configured Gemini models failed. Details: "
+        + " | ".join(errors)
+    )

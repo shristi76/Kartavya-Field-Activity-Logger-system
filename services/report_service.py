@@ -33,6 +33,16 @@ MUTED_TEXT = (105, 117, 130)
 WHITE = (255, 255, 255)
 BORDER_COLOR = (220, 228, 235)
 
+MISSING_VALUES = {
+    "",
+    "not mentioned",
+    "not available",
+    "none",
+    "null",
+    "n/a",
+    "na",
+}
+
 
 # ============================================================
 # COMMON HELPERS
@@ -41,7 +51,7 @@ BORDER_COLOR = (220, 228, 235)
 def _row_to_dict(log):
     """Convert a SQLite Row or dictionary into a normal dictionary."""
     if isinstance(log, dict):
-        return log
+        return dict(log)
 
     if hasattr(log, "keys"):
         return {key: log[key] for key in log.keys()}
@@ -60,26 +70,32 @@ def _value(log, key, default=""):
 
 
 def _display_value(log, key):
-    """Return a readable value for reports without inventing data."""
-    value = _value(log, key, "")
+    """
+    Return a readable report value.
+    Empty or missing values display as a dash.
+    """
+    value = log.get(key)
+
+    if value is None:
+        return "—"
 
     if isinstance(value, str):
         value = value.strip()
 
-        if not value or value.lower() == "not mentioned":
-            return "Not mentioned"
-
-    if value == "":
-        return "Not mentioned"
+        if value.lower() in MISSING_VALUES:
+            return "—"
 
     return str(value)
 
 
 def _beneficiary_count(log):
-    """Support both the current and older beneficiary field names."""
+    """Support both current and older beneficiary field names."""
     value = log.get("beneficiaries_assisted")
 
-    if value is None or value == "":
+    if value is None or (
+        isinstance(value, str)
+        and value.strip().lower() in MISSING_VALUES
+    ):
         value = log.get("beneficiaries")
 
     try:
@@ -105,32 +121,22 @@ def _prepare_logs(logs):
 
 
 # ============================================================
-# PDF FONT CONFIGURATION
-# ============================================================
-# ============================================================
 # PDF FONT CONFIGURATION — HINDI / UNICODE SUPPORT
 # ============================================================
 
 def _configure_pdf_fonts(pdf):
     """
-    Register a Unicode font for Hindi, Devanagari, and English text.
+    Register a Unicode font for Hindi, Devanagari, and English.
 
     Expected font files:
         Noto_Sans_Devanagari/static/NotoSansDevanagari-Regular.ttf
         Noto_Sans_Devanagari/static/NotoSansDevanagari-Bold.ttf
 
     The legacy services/fonts directory is also supported.
-
-    The fonts directory should be alongside this Python file.
-
-    Requires:
-        pip install --upgrade fpdf2 uharfbuzz
-
-    IMPORTANT:
-        This function does not fall back to Helvetica because
-        Helvetica cannot render Hindi characters.
+    Requires: pip install --upgrade fpdf2 uharfbuzz
     """
     service_dir = Path(__file__).resolve().parent
+
     font_directories = (
         service_dir / "Noto_Sans_Devanagari" / "static",
         service_dir / "fonts",
@@ -140,8 +146,12 @@ def _configure_pdf_fonts(pdf):
     bold_font = None
 
     for font_dir in font_directories:
-        candidate_regular = font_dir / "NotoSansDevanagari-Regular.ttf"
-        candidate_bold = font_dir / "NotoSansDevanagari-Bold.ttf"
+        candidate_regular = (
+            font_dir / "NotoSansDevanagari-Regular.ttf"
+        )
+        candidate_bold = (
+            font_dir / "NotoSansDevanagari-Bold.ttf"
+        )
         candidate_simple = font_dir / "NotoSansDevanagari.ttf"
 
         if candidate_regular.is_file():
@@ -154,22 +164,17 @@ def _configure_pdf_fonts(pdf):
             bold_font = candidate_simple
             break
 
-    # Stop early with a helpful message if the font is missing.
     if regular_font is None:
         raise FileNotFoundError(
-            "Hindi Unicode font was not found. Please place "
+            "Hindi Unicode font was not found. Place "
             "NotoSansDevanagari-Regular.ttf in "
             f"{service_dir / 'Noto_Sans_Devanagari' / 'static'} "
-            "or the legacy services/fonts directory."
+            "or the services/fonts directory."
         )
 
-    # Use the regular font as a fallback for bold if the
-    # separate bold font has not been downloaded.
     if bold_font is None or not bold_font.is_file():
         bold_font = regular_font
 
-    # Register both font styles. Your existing report helpers
-    # use pdf.set_font(font_name, 'B', ...) for headings.
     pdf.add_font(
         family="ReportUnicode",
         style="",
@@ -182,15 +187,13 @@ def _configure_pdf_fonts(pdf):
         fname=str(bold_font),
     )
 
-    # Enable Hindi character shaping and ligatures.
-    # Install uharfbuzz to support this in fpdf2.
     if hasattr(pdf, "set_text_shaping"):
         pdf.set_text_shaping(True)
 
-    # Set the default font so the PDF starts with Unicode text.
     pdf.set_font("ReportUnicode", size=10)
 
     return "ReportUnicode"
+
 
 # ============================================================
 # PDF LAYOUT HELPERS
@@ -224,8 +227,6 @@ def _pdf_field(pdf, font_name, label, value):
     """Render a label and a wrapping value without truncating it."""
     value = str(value)
 
-    # Estimate enough room for most fields before rendering.
-    # FPDF's automatic page-break handling remains enabled.
     if pdf.get_y() > 250:
         pdf.add_page()
 
@@ -246,7 +247,7 @@ def _pdf_field(pdf, font_name, label, value):
     pdf.multi_cell(
         0,
         5,
-        str(value),
+        value,
         new_x="LMARGIN",
         new_y="NEXT",
     )
@@ -285,7 +286,7 @@ def _pdf_draw_header(pdf, font_name, start_date, end_date):
 
 
 def _configure_pdf_page_numbering(pdf, font_name):
-    """Add page numbers to the bottom of each PDF page."""
+    """Add page numbers to the bottom of every PDF page."""
     for page_number in range(1, len(pdf.pages) + 1):
         pdf.page = page_number
 
@@ -325,11 +326,10 @@ def generate_pdf(
     pdf.set_margins(15, 15, 15)
     pdf.set_auto_page_break(auto=True, margin=18)
 
-    # Use a Unicode font when available.
     font_name = _configure_pdf_fonts(pdf)
 
     # --------------------------------------------------------
-    # PAGE 1: REPORT COVER AND ACTIVITY SUMMARY
+    # PAGE 1: REPORT OVERVIEW AND ACTIVITY SUMMARY
     # --------------------------------------------------------
 
     pdf.add_page()
@@ -337,6 +337,7 @@ def generate_pdf(
 
     pdf.set_font(font_name, "B", 13)
     pdf.set_text_color(*NAVY)
+
     pdf.cell(
         0,
         9,
@@ -367,21 +368,20 @@ def generate_pdf(
 
     pdf.ln(5)
 
-    # Summary metrics are calculated from the available records.
-    # Missing counts are excluded instead of being treated as zero.
+    # Calculate totals from known values only.
     people_values = []
     household_values = []
     beneficiary_values = []
 
     for log in logs:
-        for key, target in [
+        for key, target in (
             ("people_visited", people_values),
             ("households_visited", household_values),
-        ]:
+        ):
             value = log.get(key)
 
             try:
-                if value not in (None, ""):
+                if value is not None and str(value).strip():
                     target.append(float(value))
             except (ValueError, TypeError):
                 pass
@@ -392,28 +392,24 @@ def generate_pdf(
             beneficiary_values.append(beneficiaries)
 
     metrics = [
-        (
-            "ACTIVITY RECORDS",
-            str(len(logs)),
-        ),
+        ("ACTIVITY RECORDS", str(len(logs))),
         (
             "PEOPLE VISITED",
             str(int(sum(people_values)))
-            if people_values else "Not available",
+            if people_values else "—",
         ),
         (
             "HOUSEHOLDS",
             str(int(sum(household_values)))
-            if household_values else "Not available",
+            if household_values else "—",
         ),
         (
             "BENEFICIARIES ASSISTED",
             str(sum(beneficiary_values))
-            if beneficiary_values else "Not available",
+            if beneficiary_values else "—",
         ),
     ]
 
-    # Draw four summary cards.
     card_gap = 4
     card_width = (180 - card_gap * 3) / 4
     card_height = 24
@@ -457,8 +453,6 @@ def generate_pdf(
 
     pdf.set_y(card_y + card_height + 10)
 
-    # Activity summary. Each record wraps over multiple lines,
-    # so longer activities and locations are not cut off.
     _pdf_section_heading(
         pdf,
         font_name,
@@ -467,7 +461,6 @@ def generate_pdf(
 
     for index, log in enumerate(logs, start=1):
         pdf.set_fill_color(*LIGHT_TEAL)
-
         pdf.set_font(font_name, "B", 10)
         pdf.set_text_color(*NAVY)
 
@@ -480,13 +473,21 @@ def generate_pdf(
             new_y="NEXT",
         )
 
+        activity_date = log.get("date")
+
+        if activity_date is None or (
+            isinstance(activity_date, str)
+            and activity_date.strip().lower() in MISSING_VALUES
+        ):
+            activity_date = _display_value(log, "created_at")[:10]
+        else:
+            activity_date = _display_value(log, "date")
+
         _pdf_field(
             pdf,
             font_name,
             "Date",
-            _display_value(log, "date")
-            if log.get("date")
-            else str(_value(log, "created_at", "Not mentioned"))[:10],
+            activity_date,
         )
 
         _pdf_field(
@@ -496,14 +497,16 @@ def generate_pdf(
             _display_value(log, "activity"),
         )
 
+        beneficiary_count = _beneficiary_count(log)
+
         _pdf_field(
             pdf,
             font_name,
             "Beneficiaries Assisted",
             (
-                str(_beneficiary_count(log))
-                if _beneficiary_count(log) is not None
-                else "Not mentioned"
+                str(beneficiary_count)
+                if beneficiary_count is not None
+                else "—"
             ),
         )
 
@@ -530,7 +533,6 @@ def generate_pdf(
     )
 
     fields_to_display = [
-        ("Date", "date"),
         ("Date & Time Recorded", "created_at"),
         ("Worker ID", "speaker_id"),
         ("Social Worker", "worker_name"),
@@ -591,15 +593,13 @@ def generate_pdf(
         pdf.ln(2)
 
         for title, key in fields_to_display:
-            # Support old records that stored beneficiaries
-            # under the original field name.
             if key == "beneficiaries_assisted":
                 beneficiary_count = _beneficiary_count(log)
 
                 value = (
                     str(beneficiary_count)
                     if beneficiary_count is not None
-                    else "Not mentioned"
+                    else "—"
                 )
             else:
                 value = _display_value(log, key)
@@ -611,7 +611,6 @@ def generate_pdf(
                 value,
             )
 
-        # Include an associated photo, if one exists.
         photo_file = _value(log, "photo_file", None)
 
         if photo_file:
@@ -628,7 +627,6 @@ def generate_pdf(
                     )
 
                 pdf.ln(3)
-
                 pdf.set_font(font_name, "B", 10)
                 pdf.set_text_color(*NAVY)
 
@@ -640,7 +638,6 @@ def generate_pdf(
                     new_y="NEXT",
                 )
 
-                # Keep images within the printable page width.
                 pdf.image(
                     str(photo_path),
                     w=100,
@@ -649,7 +646,6 @@ def generate_pdf(
 
         pdf.ln(7)
 
-    # Add a consistent footer to every page.
     _configure_pdf_page_numbering(pdf, font_name)
 
     filename = (
@@ -661,6 +657,7 @@ def generate_pdf(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     pdf.output(str(output_path))
+
     return output_path
 
 
@@ -687,7 +684,6 @@ def generate_excel(
 
     summary = workbook.active
     summary.title = "Summary"
-
     summary.sheet_view.showGridLines = False
 
     summary.merge_cells("A1:D1")
@@ -761,15 +757,15 @@ def generate_excel(
         ("Activity Records", len(logs)),
         (
             "People Visited",
-            int(people_total) if people_known else "Not available",
+            int(people_total) if people_known else "—",
         ),
         (
             "Households Visited",
-            int(household_total) if households_known else "Not available",
+            int(household_total) if households_known else "—",
         ),
         (
             "Beneficiaries Assisted",
-            beneficiary_total if beneficiaries_known else "Not available",
+            beneficiary_total if beneficiaries_known else "—",
         ),
     ]
 
@@ -914,7 +910,6 @@ def generate_excel(
             _value(log, "additional_notes", None),
         ])
 
-    # Styled column header.
     for cell in worksheet[1]:
         cell.font = Font(
             name="Aptos",
@@ -940,7 +935,6 @@ def generate_excel(
 
     worksheet.row_dimensions[1].height = 42
 
-    # Column widths match the actual 33 exported columns.
     column_widths = {
         1: 9,
         2: 22,
@@ -982,7 +976,6 @@ def generate_excel(
             get_column_letter(column_index)
         ].width = width
 
-    # Format all data rows for readability.
     for row_index in range(2, worksheet.max_row + 1):
         worksheet.row_dimensions[row_index].height = 42
 
@@ -1004,27 +997,24 @@ def generate_excel(
                 )
             )
 
-            # Alternating row fills make large datasets easier to scan.
-            if row_index % 2 == 0:
-                cell.fill = PatternFill(
-                    "solid",
-                    fgColor="F1F5F9",
-                )
-            else:
-                cell.fill = PatternFill(
-                    "solid",
-                    fgColor="FFFFFF",
-                )
+            cell.fill = PatternFill(
+                "solid",
+                fgColor=(
+                    "F1F5F9"
+                    if row_index % 2 == 0
+                    else "FFFFFF"
+                ),
+            )
 
-    # Freeze the headings and first three identifying columns.
     worksheet.freeze_panes = "D2"
 
-    # Enable native Excel filtering and table styling.
     if worksheet.max_row >= 2:
         table = Table(
             displayName="SocialWorkActivityLogs",
-            ref=f"A1:{get_column_letter(worksheet.max_column)}"
-                f"{worksheet.max_row}",
+            ref=(
+                f"A1:{get_column_letter(worksheet.max_column)}"
+                f"{worksheet.max_row}"
+            ),
         )
 
         table_style = TableStyleInfo(
@@ -1038,7 +1028,6 @@ def generate_excel(
         table.tableStyleInfo = table_style
         worksheet.add_table(table)
 
-    # Keep workbook calculation and viewing behavior convenient.
     worksheet.sheet_properties.pageSetUpPr.fitToPage = True
     worksheet.page_setup.fitToWidth = 1
     worksheet.page_setup.fitToHeight = 0
