@@ -46,8 +46,8 @@ export default function ReportCard({ report }: Props) {
       <Info label="Date" value={report.date} />
       <Info label="Organization" value={report.organization} />
       <Info label="Location" value={report.location} />
-      <Info label="Village" value={report.village} />
-      <Info label="Block" value={report.block} />
+      {/* <Info label="Village" value={report.village} />
+      <Info label="Block" value={report.block} /> */}
       <Info label="District" value={report.district} />
 
       {/* Visit statistics */}
@@ -185,10 +185,7 @@ export default function ReportCard({ report }: Props) {
         value={report.outcomes_and_progress}
       />
 
-      <Info
-        label="Additional Notes"
-        value={report.additional_notes}
-      />
+      
 
       {/* Source transcription */}
       <SectionTitle

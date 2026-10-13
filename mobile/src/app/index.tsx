@@ -94,11 +94,13 @@ type RecentActivity = {
 
 type ActivityPayload = {
   speaker_id: string;
+  worker_name: string;
+  organization: string;
+  district: string;
   hindi_text: string;
   translated_text: string;
   activity: string;
   location: string;
-  organization?: string;
   beneficiaries: string;
 
   village?: string;
@@ -198,6 +200,9 @@ export default function HomeScreen() {
   const recorderState = useAudioRecorderState(recorder);
 
   const [workerId, setWorkerId] = useState("");
+  const [workerName, setWorkerName] = useState("");
+  const [organization, setOrganization] = useState("");
+  const [district, setDistrict] = useState("");
   const [report, setReport] = useState<ActivityReport | null>(null);
   const [transcription, setTranscription] = useState("");
   const [translatedText, setTranslatedText] = useState("");
@@ -368,8 +373,11 @@ export default function HomeScreen() {
       setSelectedPhotoUri(null);
       setUploadedPhotoFile(null);
 
-      setTranslatedText(generatedReport.translated_text ?? "");
-      setActivity(generatedReport.activity ?? "");
+      setWorkerName(String(generatedReport.worker_name || workerName));
+      setOrganization(String(generatedReport.organization || organization));
+      setDistrict(String(generatedReport.district || district));
+      setTranslatedText(String(generatedReport.translated_text ?? ""));
+      setActivity(String(generatedReport.activity ?? ""));
       setBeneficiaries(String(generatedReport.beneficiaries ?? ""));
       setLocation(String(generatedReport.location ?? ""));
 
@@ -509,8 +517,11 @@ const handleUploadImage = async () => {
       const result = await processActivity(transcription.trim());
       const data = result.data ?? {};
 
-      setTranslatedText(data.translated_text ?? "");
-      setActivity(data.activity ?? "");
+      setWorkerName(String(data.worker_name || workerName));
+      setOrganization(String(data.organization || organization));
+      setDistrict(String(data.district || district));
+      setTranslatedText(String(data.translated_text ?? ""));
+      setActivity(String(data.activity ?? ""));
       setBeneficiaries(String(data.beneficiaries ?? ""));
       setLocation(String(data.location ?? ""));
 
@@ -560,6 +571,9 @@ const handleUploadImage = async () => {
     setEditingActivityId(item.id);
     setActivityId(item.id);
     setWorkerId(item.speaker_id ?? "");
+    setWorkerName(item.worker_name ?? "");
+    setOrganization(item.organization ?? "");
+    setDistrict(item.district ?? "");
     setTranscription(item.hindi_text ?? "");
     setTranslatedText(item.translated_text ?? "");
     setActivity(item.activity ?? "");
@@ -578,6 +592,9 @@ const handleUploadImage = async () => {
       activity: item.activity,
       beneficiaries: item.beneficiaries,
       location: item.location,
+      worker_name: item.worker_name,
+      organization: item.organization,
+      district: item.district,
     });
 
     setDebugMessage(`Editing activity #${item.id}.`);
@@ -629,6 +646,9 @@ const handleUploadImage = async () => {
 
       const payload: ActivityPayload = {
         speaker_id: workerId.trim(),
+        worker_name: workerName.trim(),
+        organization: organization.trim(),
+        district: district.trim(),
         hindi_text: transcription.trim(),
         translated_text: translatedText.trim(),
         activity: activity.trim(),
@@ -712,6 +732,9 @@ const handleUploadImage = async () => {
 
       const result = await saveActivity({
         speaker_id: workerId.trim(),
+        worker_name: workerName.trim(),
+        organization: organization.trim(),
+        district: district.trim(),
         hindi_text: transcription.trim(),
         translated_text: translatedText.trim(),
         activity: activity.trim(),
@@ -977,6 +1000,39 @@ async function handleDownloadPdf() {
           <Text style={styles.helperText}>
             Use the ID assigned to the field worker.
           </Text>
+
+          <Text style={styles.fieldLabel}>SOCIAL WORKER NAME</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Enter social worker name"
+            placeholderTextColor="#9BAAAF"
+            value={workerName}
+            onChangeText={setWorkerName}
+            autoCapitalize="words"
+            editable={!isRecording && !isBusy}
+          />
+
+          <Text style={styles.fieldLabel}>ORGANIZATION</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Enter organization name"
+            placeholderTextColor="#9BAAAF"
+            value={organization}
+            onChangeText={setOrganization}
+            autoCapitalize="words"
+            editable={!isRecording && !isBusy}
+          />
+
+          <Text style={styles.fieldLabel}>DISTRICT</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Enter district"
+            placeholderTextColor="#9BAAAF"
+            value={district}
+            onChangeText={setDistrict}
+            autoCapitalize="words"
+            editable={!isRecording && !isBusy}
+          />
         </View>
 
         {/* 02 — Voice recording */}
@@ -1348,6 +1404,21 @@ async function handleDownloadPdf() {
                       <Text style={styles.historyWorker}>
                         Worker ID: {item.speaker_id || "—"}
                       </Text>
+                      {!!item.worker_name && (
+                        <Text style={styles.historyWorker}>
+                          Social Worker: {item.worker_name}
+                        </Text>
+                      )}
+                      {!!item.organization && (
+                        <Text style={styles.historyWorker}>
+                          Organization: {item.organization}
+                        </Text>
+                      )}
+                      {!!item.district && (
+                        <Text style={styles.historyWorker}>
+                          District: {item.district}
+                        </Text>
+                      )}
                     </View>
                   </View>
 

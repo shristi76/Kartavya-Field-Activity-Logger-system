@@ -64,8 +64,12 @@ export async function processActivity(hindiText: string) {
 }
 
 // 3. Save reviewed activity
+
 export async function saveActivity(data: {
   speaker_id: string;
+  worker_name: string;
+  organization: string;
+  district: string;
   hindi_text: string;
   translated_text: string;
   activity: string;
@@ -85,6 +89,7 @@ export async function saveActivity(data: {
 
   return handleResponse(response);
 }
+
 
 // 4. Upload activity photo
 export async function uploadPhoto(photoUri: string) {

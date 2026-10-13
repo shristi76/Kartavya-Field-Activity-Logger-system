@@ -70,10 +70,7 @@ def _value(log, key, default=""):
 
 
 def _display_value(log, key):
-    """
-    Return a readable report value.
-    Empty or missing values display as a dash.
-    """
+    """Display missing or empty values as a dash."""
     value = log.get(key)
 
     if value is None:
@@ -89,7 +86,7 @@ def _display_value(log, key):
 
 
 def _beneficiary_count(log):
-    """Support both current and older beneficiary field names."""
+    """Support current and older beneficiary field names."""
     value = log.get("beneficiaries_assisted")
 
     if value is None or (
@@ -99,7 +96,17 @@ def _beneficiary_count(log):
         value = log.get("beneficiaries")
 
     try:
-        return int(value) if value not in (None, "") else None
+        if value is None:
+            return None
+
+        if isinstance(value, str):
+            value = value.strip()
+
+            if value.lower() in MISSING_VALUES:
+                return None
+
+        return int(value)
+
     except (ValueError, TypeError):
         return None
 
@@ -107,7 +114,8 @@ def _beneficiary_count(log):
 def _safe_filename_date(value):
     """Remove filename-unsafe characters from date strings."""
     return "".join(
-        character for character in str(value)
+        character
+        for character in str(value)
         if character.isalnum() or character in "-_"
     )
 
@@ -118,6 +126,43 @@ def _prepare_logs(logs):
         return []
 
     return [_row_to_dict(log) for log in logs]
+
+
+def _known_numeric_total(logs, key):
+    """Sum known numeric values; return None if all values are missing."""
+    values = []
+
+    for log in logs:
+        value = log.get(key)
+
+        if value is None:
+            continue
+
+        if isinstance(value, str):
+            value = value.strip()
+
+            if value.lower() in MISSING_VALUES:
+                continue
+
+        try:
+            values.append(float(value))
+        except (ValueError, TypeError):
+            continue
+
+    if not values:
+        return None
+
+    total = sum(values)
+
+    return int(total) if total.is_integer() else total
+
+
+def _format_total(value):
+    """Format a numeric total or show a dash for missing data."""
+    if value is None:
+        return "—"
+
+    return str(value)
 
 
 # ============================================================
@@ -132,8 +177,10 @@ def _configure_pdf_fonts(pdf):
         Noto_Sans_Devanagari/static/NotoSansDevanagari-Regular.ttf
         Noto_Sans_Devanagari/static/NotoSansDevanagari-Bold.ttf
 
-    The legacy services/fonts directory is also supported.
-    Requires: pip install --upgrade fpdf2 uharfbuzz
+    The services/fonts directory is also supported.
+
+    Install dependencies:
+        pip install --upgrade fpdf2 uharfbuzz
     """
     service_dir = Path(__file__).resolve().parent
 
@@ -152,7 +199,9 @@ def _configure_pdf_fonts(pdf):
         candidate_bold = (
             font_dir / "NotoSansDevanagari-Bold.ttf"
         )
-        candidate_simple = font_dir / "NotoSansDevanagari.ttf"
+        candidate_simple = (
+            font_dir / "NotoSansDevanagari.ttf"
+        )
 
         if candidate_regular.is_file():
             regular_font = candidate_regular
@@ -224,9 +273,10 @@ def _pdf_section_heading(pdf, font_name, title):
 
 
 def _pdf_field(pdf, font_name, label, value):
-    """Render a label and a wrapping value without truncating it."""
+    """Render a label and wrapping value."""
     value = str(value)
 
+    # Start a new page before the field if there is insufficient room.
     if pdf.get_y() > 250:
         pdf.add_page()
 
@@ -256,7 +306,7 @@ def _pdf_field(pdf, font_name, label, value):
 
 
 def _pdf_draw_header(pdf, font_name, start_date, end_date):
-    """Draw a consistent report header on the current page."""
+    """Draw the report header on the current page."""
     pdf.set_fill_color(*NAVY)
     pdf.rect(0, 0, 210, 34, style="F")
 
@@ -301,9 +351,20 @@ def _configure_pdf_page_numbering(pdf, font_name):
         pdf.cell(
             0,
             5,
-            f"Social Work Field Report  |  Page {page_number}",
+            f"Social Work Field Report | Page {page_number}",
             align="C",
         )
+
+
+def _pdf_add_new_page(pdf, font_name, start_date, end_date):
+    """Add a page and redraw the report header."""
+    pdf.add_page()
+    _pdf_draw_header(
+        pdf,
+        font_name,
+        start_date,
+        end_date,
+    )
 
 
 # ============================================================
@@ -332,8 +393,12 @@ def generate_pdf(
     # PAGE 1: REPORT OVERVIEW AND ACTIVITY SUMMARY
     # --------------------------------------------------------
 
-    pdf.add_page()
-    _pdf_draw_header(pdf, font_name, start_date, end_date)
+    _pdf_add_new_page(
+        pdf,
+        font_name,
+        start_date,
+        end_date,
+    )
 
     pdf.set_font(font_name, "B", 13)
     pdf.set_text_color(*NAVY)
@@ -368,45 +433,38 @@ def generate_pdf(
 
     pdf.ln(5)
 
-    # Calculate totals from known values only.
-    people_values = []
-    household_values = []
-    beneficiary_values = []
+    people_total = _known_numeric_total(
+        logs,
+        "people_visited",
+    )
+    household_total = _known_numeric_total(
+        logs,
+        "households_visited",
+    )
 
-    for log in logs:
-        for key, target in (
-            ("people_visited", people_values),
-            ("households_visited", household_values),
-        ):
-            value = log.get(key)
+    beneficiary_values = [
+        _beneficiary_count(log)
+        for log in logs
+    ]
+    beneficiary_values = [
+        value
+        for value in beneficiary_values
+        if value is not None
+    ]
 
-            try:
-                if value is not None and str(value).strip():
-                    target.append(float(value))
-            except (ValueError, TypeError):
-                pass
-
-        beneficiaries = _beneficiary_count(log)
-
-        if beneficiaries is not None:
-            beneficiary_values.append(beneficiaries)
+    beneficiary_total = (
+        sum(beneficiary_values)
+        if beneficiary_values
+        else None
+    )
 
     metrics = [
         ("ACTIVITY RECORDS", str(len(logs))),
-        (
-            "PEOPLE VISITED",
-            str(int(sum(people_values)))
-            if people_values else "—",
-        ),
-        (
-            "HOUSEHOLDS",
-            str(int(sum(household_values)))
-            if household_values else "—",
-        ),
+        # ("PEOPLE VISITED", _format_total(people_total)),
+        # ("HOUSEHOLDS", _format_total(household_total)),
         (
             "BENEFICIARIES ASSISTED",
-            str(sum(beneficiary_values))
-            if beneficiary_values else "—",
+            _format_total(beneficiary_total),
         ),
     ]
 
@@ -460,6 +518,14 @@ def generate_pdf(
     )
 
     for index, log in enumerate(logs, start=1):
+        if pdf.get_y() > 245:
+            _pdf_add_new_page(
+                pdf,
+                font_name,
+                start_date,
+                end_date,
+            )
+
         pdf.set_fill_color(*LIGHT_TEAL)
         pdf.set_font(font_name, "B", 10)
         pdf.set_text_color(*NAVY)
@@ -473,15 +539,15 @@ def generate_pdf(
             new_y="NEXT",
         )
 
-        activity_date = log.get("date")
+        activity_date = _display_value(log, "date")
 
-        if activity_date is None or (
-            isinstance(activity_date, str)
-            and activity_date.strip().lower() in MISSING_VALUES
-        ):
-            activity_date = _display_value(log, "created_at")[:10]
-        else:
-            activity_date = _display_value(log, "date")
+        if activity_date == "—":
+            created_at = _display_value(log, "created_at")
+            activity_date = (
+                created_at[:10]
+                if created_at != "—"
+                else "—"
+            )
 
         _pdf_field(
             pdf,
@@ -523,8 +589,12 @@ def generate_pdf(
     # DETAILED FIELD VISIT RECORDS
     # --------------------------------------------------------
 
-    pdf.add_page()
-    _pdf_draw_header(pdf, font_name, start_date, end_date)
+    _pdf_add_new_page(
+        pdf,
+        font_name,
+        start_date,
+        end_date,
+    )
 
     _pdf_section_heading(
         pdf,
@@ -532,44 +602,25 @@ def generate_pdf(
         "Detailed Field Visit Records",
     )
 
+    # Only the selected text fields plus supporting metadata.
     fields_to_display = [
+        # ("Date", "date"),
         ("Date & Time Recorded", "created_at"),
         ("Worker ID", "speaker_id"),
         ("Social Worker", "worker_name"),
         ("Organization", "organization"),
         ("Location", "location"),
-        ("Village", "village"),
-        ("Block", "block"),
         ("District", "district"),
         ("Activity", "activity"),
-        ("People Visited", "people_visited"),
-        ("Households Visited", "households_visited"),
         ("Beneficiaries Assisted", "beneficiaries_assisted"),
-        ("Issues Identified", "issues_identified"),
-        ("Education-Related Issues", "education_related_issues"),
-        ("Health and Wellbeing Concerns", "health_and_wellbeing_concerns"),
-        ("Family and Child Welfare Concerns", "family_and_child_welfare_concerns"),
-        ("Livelihood and Financial Issues", "livelihood_and_financial_issues"),
-        ("Government Scheme and Benefit Issues", "government_scheme_and_benefit_issues"),
-        ("Elderly and Disability Support Needs", "elderly_and_disability_support_needs"),
-        ("Assistance Provided", "assistance_provided"),
-        ("Actions Taken", "actions_taken"),
-        ("Referrals Made", "referrals_made"),
-        ("Services or Benefits Accessed", "services_or_benefits_accessed"),
-        ("Referral Required", "referral_required"),
-        ("Follow-Up Required", "follow_up_required"),
-        ("Follow-Up Date", "follow_up_date"),
-        ("Responsible Person", "responsible_person"),
-        ("Outcomes and Progress", "outcomes_and_progress"),
-        ("Original Statement", "hindi_text"),
+        ("Original Hindi Statement", "hindi_text"),
         ("Translated Statement", "translated_text"),
         ("Additional Notes", "additional_notes"),
     ]
 
     for index, log in enumerate(logs, start=1):
         if pdf.get_y() > 245:
-            pdf.add_page()
-            _pdf_draw_header(
+            _pdf_add_new_page(
                 pdf,
                 font_name,
                 start_date,
@@ -594,13 +645,8 @@ def generate_pdf(
 
         for title, key in fields_to_display:
             if key == "beneficiaries_assisted":
-                beneficiary_count = _beneficiary_count(log)
-
-                value = (
-                    str(beneficiary_count)
-                    if beneficiary_count is not None
-                    else "—"
-                )
+                count = _beneficiary_count(log)
+                value = str(count) if count is not None else "—"
             else:
                 value = _display_value(log, key)
 
@@ -611,15 +657,20 @@ def generate_pdf(
                 value,
             )
 
-        photo_file = _value(log, "photo_file", None)
+        photo_file = _value(
+            log,
+            "photo_file",
+            None,
+        )
 
         if photo_file:
-            photo_path = PHOTO_DIR / Path(str(photo_file)).name
+            photo_path = PHOTO_DIR / Path(
+                str(photo_file)
+            ).name
 
             if photo_path.is_file():
                 if pdf.get_y() > 225:
-                    pdf.add_page()
-                    _pdf_draw_header(
+                    _pdf_add_new_page(
                         pdf,
                         font_name,
                         start_date,
@@ -646,15 +697,22 @@ def generate_pdf(
 
         pdf.ln(7)
 
-    _configure_pdf_page_numbering(pdf, font_name)
+    _configure_pdf_page_numbering(
+        pdf,
+        font_name,
+    )
 
     filename = (
-        f"Social_Work_Report_{_safe_filename_date(start_date)}"
+        f"Social_Work_Report_"
+        f"{_safe_filename_date(start_date)}"
         f"_to_{_safe_filename_date(end_date)}.pdf"
     )
 
     output_path = REPORT_DIR / filename
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
     pdf.output(str(output_path))
 
@@ -720,52 +778,38 @@ def generate_excel(
     )
     summary.row_dimensions[2].height = 25
 
-    people_total = 0
-    household_total = 0
-    beneficiary_total = 0
+    people_total = _known_numeric_total(
+        logs,
+        "people_visited",
+    )
+    household_total = _known_numeric_total(
+        logs,
+        "households_visited",
+    )
 
-    people_known = False
-    households_known = False
-    beneficiaries_known = False
+    beneficiary_values = [
+        _beneficiary_count(log)
+        for log in logs
+    ]
+    beneficiary_values = [
+        value
+        for value in beneficiary_values
+        if value is not None
+    ]
 
-    for log in logs:
-        try:
-            value = log.get("people_visited")
-
-            if value not in (None, ""):
-                people_total += float(value)
-                people_known = True
-        except (ValueError, TypeError):
-            pass
-
-        try:
-            value = log.get("households_visited")
-
-            if value not in (None, ""):
-                household_total += float(value)
-                households_known = True
-        except (ValueError, TypeError):
-            pass
-
-        beneficiary_count = _beneficiary_count(log)
-
-        if beneficiary_count is not None:
-            beneficiary_total += beneficiary_count
-            beneficiaries_known = True
+    beneficiary_total = (
+        sum(beneficiary_values)
+        if beneficiary_values
+        else None
+    )
 
     dashboard_metrics = [
         ("Activity Records", len(logs)),
-        (
-            "People Visited",
-            int(people_total) if people_known else "—",
-        ),
-        (
-            "Households Visited",
-            int(household_total) if households_known else "—",
-        ),
+        # ("People Visited", _format_total(people_total)),
+        # ("Households Visited", _format_total(household_total)),
         (
             "Beneficiaries Assisted",
-            beneficiary_total if beneficiaries_known else "—",
+            _format_total(beneficiary_total),
         ),
     ]
 
@@ -773,8 +817,14 @@ def generate_excel(
     summary["B4"] = "VALUE"
 
     for cell in summary[4][:2]:
-        cell.font = Font(bold=True, color="FFFFFF")
-        cell.fill = PatternFill("solid", fgColor="188985")
+        cell.font = Font(
+            bold=True,
+            color="FFFFFF",
+        )
+        cell.fill = PatternFill(
+            "solid",
+            fgColor="188985",
+        )
         cell.alignment = Alignment(
             horizontal="center",
             vertical="center",
@@ -784,26 +834,46 @@ def generate_excel(
         dashboard_metrics,
         start=5,
     ):
-        summary.cell(row=row_index, column=1, value=label)
-        summary.cell(row=row_index, column=2, value=value)
+        summary.cell(
+            row=row_index,
+            column=1,
+            value=label,
+        )
+        summary.cell(
+            row=row_index,
+            column=2,
+            value=value,
+        )
 
-        summary.cell(row=row_index, column=1).font = Font(
+        summary.cell(
+            row=row_index,
+            column=1,
+        ).font = Font(
             bold=True,
             color="1F3755",
         )
-        summary.cell(row=row_index, column=2).font = Font(
+
+        summary.cell(
+            row=row_index,
+            column=2,
+        ).font = Font(
             bold=True,
             color="188985",
             size=12,
         )
 
-        fill_color = "EDF3F9" if row_index % 2 else "FFFFFF"
+        fill_color = (
+            "EDF3F9"
+            if row_index % 2
+            else "FFFFFF"
+        )
 
         for column_index in (1, 2):
             cell = summary.cell(
                 row=row_index,
                 column=column_index,
             )
+
             cell.fill = PatternFill(
                 "solid",
                 fgColor=fill_color,
@@ -829,7 +899,7 @@ def generate_excel(
     summary.freeze_panes = "A4"
 
     # --------------------------------------------------------
-    # WORKSHEET 2: DETAILED ACTIVITY LOGS
+    # WORKSHEET 2: SELECTED ACTIVITY LOG FIELDS
     # --------------------------------------------------------
 
     worksheet = workbook.create_sheet("Activity Logs")
@@ -837,37 +907,16 @@ def generate_excel(
 
     headers = [
         "ID",
-        "Date & Time",
+        "Date & Time Recorded",
         "Worker ID",
         "Worker Name",
         "Organization",
-        "Audio File",
-        "Original Statement",
+        "Location",
+        "District",
+        "Original Hindi Statement",
         "Translated Statement",
         "Activity",
-        "People Visited",
-        "Households Visited",
         "Beneficiaries Assisted",
-        "Location",
-        "Village",
-        "Block",
-        "District",
-        "Issues Identified",
-        "Education-Related Issues",
-        "Health and Wellbeing Concerns",
-        "Family and Child Welfare Concerns",
-        "Livelihood and Financial Issues",
-        "Government Scheme and Benefit Issues",
-        "Elderly and Disability Support Needs",
-        "Assistance Provided",
-        "Actions Taken",
-        "Referrals Made",
-        "Services or Benefits Accessed",
-        "Referral Required",
-        "Follow-Up Required",
-        "Follow-Up Date",
-        "Responsible Person",
-        "Outcomes and Progress",
         "Additional Notes",
     ]
 
@@ -878,38 +927,18 @@ def generate_excel(
             _value(log, "id", None),
             _value(log, "created_at", None),
             _value(log, "speaker_id", None),
-            _value(log, "worker_name", None),
-            _value(log, "organization", None),
-            _value(log, "audio_file", None),
-            _value(log, "hindi_text", None),
-            _value(log, "translated_text", None),
-            _value(log, "activity", None),
-            _value(log, "people_visited", None),
-            _value(log, "households_visited", None),
+            _display_value(log, "worker_name"),
+            _display_value(log, "organization"),
+            _display_value(log, "location"),
+            _display_value(log, "district"),
+            _display_value(log, "hindi_text"),
+            _display_value(log, "translated_text"),
+            _display_value(log, "activity"),
             _beneficiary_count(log),
-            _value(log, "location", None),
-            _value(log, "village", None),
-            _value(log, "block", None),
-            _value(log, "district", None),
-            _value(log, "issues_identified", None),
-            _value(log, "education_related_issues", None),
-            _value(log, "health_and_wellbeing_concerns", None),
-            _value(log, "family_and_child_welfare_concerns", None),
-            _value(log, "livelihood_and_financial_issues", None),
-            _value(log, "government_scheme_and_benefit_issues", None),
-            _value(log, "elderly_and_disability_support_needs", None),
-            _value(log, "assistance_provided", None),
-            _value(log, "actions_taken", None),
-            _value(log, "referrals_made", None),
-            _value(log, "services_or_benefits_accessed", None),
-            _value(log, "referral_required", None),
-            _value(log, "follow_up_required", None),
-            _value(log, "follow_up_date", None),
-            _value(log, "responsible_person", None),
-            _value(log, "outcomes_and_progress", None),
-            _value(log, "additional_notes", None),
+            _display_value(log, "additional_notes"),
         ])
 
+    # Header formatting
     for cell in worksheet[1]:
         cell.font = Font(
             name="Aptos",
@@ -935,40 +964,20 @@ def generate_excel(
 
     worksheet.row_dimensions[1].height = 42
 
+    # Column widths match the 12 selected columns.
     column_widths = {
         1: 9,
         2: 22,
         3: 15,
         4: 22,
         5: 25,
-        6: 28,
-        7: 42,
+        6: 25,
+        7: 20,
         8: 42,
-        9: 36,
-        10: 16,
-        11: 18,
-        12: 22,
-        13: 25,
-        14: 22,
-        15: 18,
-        16: 20,
-        17: 40,
-        18: 35,
-        19: 35,
-        20: 40,
-        21: 35,
-        22: 40,
-        23: 40,
-        24: 35,
-        25: 35,
-        26: 30,
-        27: 35,
-        28: 20,
-        29: 20,
-        30: 20,
-        31: 25,
-        32: 35,
-        33: 40,
+        9: 42,
+        10: 36,
+        11: 22,
+        12: 40,
     }
 
     for column_index, width in column_widths.items():
@@ -976,10 +985,14 @@ def generate_excel(
             get_column_letter(column_index)
         ].width = width
 
+    # Body formatting
     for row_index in range(2, worksheet.max_row + 1):
         worksheet.row_dimensions[row_index].height = 42
 
-        for column_index in range(1, worksheet.max_column + 1):
+        for column_index in range(
+            1,
+            worksheet.max_column + 1,
+        ):
             cell = worksheet.cell(
                 row=row_index,
                 column=column_index,
@@ -1008,11 +1021,13 @@ def generate_excel(
 
     worksheet.freeze_panes = "D2"
 
+    # Add filterable Excel table if records exist.
     if worksheet.max_row >= 2:
         table = Table(
             displayName="SocialWorkActivityLogs",
             ref=(
-                f"A1:{get_column_letter(worksheet.max_column)}"
+                f"A1:"
+                f"{get_column_letter(worksheet.max_column)}"
                 f"{worksheet.max_row}"
             ),
         )
@@ -1028,6 +1043,7 @@ def generate_excel(
         table.tableStyleInfo = table_style
         worksheet.add_table(table)
 
+    # Page setup for printing
     worksheet.sheet_properties.pageSetUpPr.fitToPage = True
     worksheet.page_setup.fitToWidth = 1
     worksheet.page_setup.fitToHeight = 0
@@ -1039,12 +1055,16 @@ def generate_excel(
     # --------------------------------------------------------
 
     filename = (
-        f"Social_Work_Logs_{_safe_filename_date(start_date)}"
+        f"Social_Work_Logs_"
+        f"{_safe_filename_date(start_date)}"
         f"_to_{_safe_filename_date(end_date)}.xlsx"
     )
 
     output_path = EXPORT_DIR / filename
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
     workbook.save(output_path)
 
