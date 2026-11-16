@@ -1,4 +1,7 @@
 Flask
+psycopg[binary]
+Flask-JWT-Extended
+argon2-cffi
 flask-cors
 SpeechRecognition
 google-genai

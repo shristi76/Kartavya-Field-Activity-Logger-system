@@ -1,5 +1,7 @@
 
 import React, { useCallback, useEffect, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Redirect, router } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
@@ -31,10 +33,12 @@ import {
   saveActivity,
   getRecentActivities,
   updateActivity,
-  deleteActivity,
   uploadPhoto,
   generatePdfReport,
   getPdfDownloadUrl,
+  downloadPdfReport,
+  setAccessToken,
+  getCurrentUser,
 } from "@/services/api";
 
 const COLORS = {
@@ -56,6 +60,7 @@ type ActivityReport = Record<string, ReportValue>;
 
 type RecentActivity = {
   id?: number | string;
+  created_at?: string;
   speaker_id?: string;
   worker_name?: string;
   hindi_text?: string;
@@ -212,9 +217,7 @@ export default function HomeScreen() {
   const [audioFile, setAudioFile] = useState<string | null>(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
-  const [selectedPhotoUri, setSelectedPhotoUri] = useState<string | null>(
-    null
-  );
+  const [selectedPhotoUris, setSelectedPhotoUris] = useState<string[]>([]);
   const [uploadedPhotoFile, setUploadedPhotoFile] = useState<string | null>(
     null
   );
@@ -240,6 +243,8 @@ export default function HomeScreen() {
   const [isLoadingActivities, setIsLoadingActivities] = useState(false);
   const [isRefreshingActivities, setIsRefreshingActivities] = useState(false);
   const [activitiesError, setActivitiesError] = useState("");
+  const [authenticated, setAuthenticated] = useState<boolean | null>(null);
+  const [accountRole, setAccountRole] = useState<string | null>(null);
 
   const isRecording = recorderState.isRecording;
   const isEditing = editingActivityId !== null;
@@ -275,8 +280,30 @@ export default function HomeScreen() {
   }, []);
 
   useEffect(() => {
-    void loadRecentActivities();
+    void AsyncStorage.getItem("field_access_token").then(token => {
+      if (!token) { setAuthenticated(false); router.replace("/login"); return; }
+      void getCurrentUser().then(result => {
+        setWorkerId(result.data.worker_id || "");
+        setWorkerName(result.data.name || "");
+        setOrganization(result.data.organization || "");
+        setAccountRole(result.data.role || "worker");
+        setAuthenticated(true);
+        void loadRecentActivities();
+      }).catch(async () => {
+        await setAccessToken(null);
+        setAuthenticated(false);
+        router.replace("/login");
+      });
+    });
   }, [loadRecentActivities]);
+
+  async function handleLogout() {
+    await setAccessToken(null);
+    router.replace("/login");
+  }
+
+  if (authenticated !== true || accountRole === null) return <SafeAreaView style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: COLORS.background }}><ActivityIndicator color={COLORS.primary} /></SafeAreaView>;
+  if (accountRole === "admin") return <Redirect href="/admin" />;
 
   function resetReviewForm() {
     setReport(null);
@@ -286,7 +313,7 @@ export default function HomeScreen() {
     setBeneficiaries("");
     setLocation("");
     setAudioFile(null);
-    setSelectedPhotoUri(null);
+    setSelectedPhotoUris([]);
     setUploadedPhotoFile(null);
     setActivityId(null);
     setEditingActivityId(null);
@@ -370,7 +397,7 @@ export default function HomeScreen() {
       setAudioFile(result.audio_file ?? null);
       setActivityId(null);
       setEditingActivityId(null);
-      setSelectedPhotoUri(null);
+      setSelectedPhotoUris([]);
       setUploadedPhotoFile(null);
 
       setWorkerName(String(generatedReport.worker_name || workerName));
@@ -378,7 +405,14 @@ export default function HomeScreen() {
       setDistrict(String(generatedReport.district || district));
       setTranslatedText(String(generatedReport.translated_text ?? ""));
       setActivity(String(generatedReport.activity ?? ""));
-      setBeneficiaries(String(generatedReport.beneficiaries ?? ""));
+      setBeneficiaries(
+        String(
+          generatedReport.beneficiaries ??
+            generatedReport.beneficiaries_assisted ??
+            generatedReport.beneficiary_count ??
+            ""
+        )
+      );
       setLocation(String(generatedReport.location ?? ""));
 
       setReport(
@@ -435,13 +469,13 @@ export default function HomeScreen() {
 
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
-        allowsEditing: true,
+        allowsMultipleSelection: true,
         quality: 0.8,
       });
 
       if (result.canceled || !result.assets?.length) return;
 
-      setSelectedPhotoUri(result.assets[0].uri);
+      setSelectedPhotoUris(result.assets.map((asset) => asset.uri));
 
       // The new selection has not been uploaded yet.
       setUploadedPhotoFile(null);
@@ -454,36 +488,25 @@ export default function HomeScreen() {
   // Upload the selected image to the Flask API.
 
 const handleUploadImage = async () => {
-  if (!selectedPhotoUri) {
-    Alert.alert("No image selected", "Please choose an image first.");
+  if (!selectedPhotoUris.length) {
+    Alert.alert("No images selected", "Please choose one or more images first.");
     return;
   }
 
   setIsUploadingPhoto(true);
 
   try {
-    const response = await uploadPhoto(selectedPhotoUri);
-
-    // Your Flask API returns the filename inside response.data.
-    const photoPath =
-      response.data?.filename ??
-      response.photo_file ??
-      response.filename ??
-      response.file_path ??
-      response.path;
-
-    if (typeof photoPath !== "string" || !photoPath.trim()) {
-      console.log(
-        "Photo upload response:",
-        JSON.stringify(response, null, 2)
-      );
-
-      throw new Error("The server did not return a photo filename.");
+    const uploadedPaths: string[] = [];
+    for (const photoUri of selectedPhotoUris) {
+      const response = await uploadPhoto(photoUri);
+      const photoPath = response.data?.filename ?? response.photo_file ?? response.filename ?? response.file_path ?? response.path;
+      if (typeof photoPath !== "string" || !photoPath.trim()) {
+        throw new Error("The server did not return a photo filename.");
+      }
+      uploadedPaths.push(photoPath);
     }
-
-    setUploadedPhotoFile(photoPath);
-
-    Alert.alert("Success", "Photo uploaded successfully.");
+    setUploadedPhotoFile(uploadedPaths.join(","));
+    Alert.alert("Success", `${uploadedPaths.length} photo${uploadedPaths.length === 1 ? "" : "s"} uploaded successfully.`);
   } catch (error) {
     console.error("Photo upload error:", error);
 
@@ -522,7 +545,14 @@ const handleUploadImage = async () => {
       setDistrict(String(data.district || district));
       setTranslatedText(String(data.translated_text ?? ""));
       setActivity(String(data.activity ?? ""));
-      setBeneficiaries(String(data.beneficiaries ?? ""));
+      setBeneficiaries(
+        String(
+          data.beneficiaries ??
+            data.beneficiaries_assisted ??
+            data.beneficiary_count ??
+            ""
+        )
+      );
       setLocation(String(data.location ?? ""));
 
       setReport(
@@ -577,14 +607,18 @@ const handleUploadImage = async () => {
     setTranscription(item.hindi_text ?? "");
     setTranslatedText(item.translated_text ?? "");
     setActivity(item.activity ?? "");
-    setBeneficiaries(String(item.beneficiaries ?? ""));
+    setBeneficiaries(
+      String(
+        item.beneficiaries ?? item.beneficiaries_assisted ?? ""
+      )
+    );
     setLocation(item.location ?? "");
     setAudioFile(item.audio_file ?? null);
 
     // Preserve the saved path. The existing image can be previewed only
     // if the backend provides a usable image URL.
     setUploadedPhotoFile(item.photo_file ?? null);
-    setSelectedPhotoUri(null);
+    setSelectedPhotoUris([]);
 
     setReport({
       hindi_text: item.hindi_text,
@@ -804,33 +838,7 @@ const handleUploadImage = async () => {
   }
 
   async function confirmDeleteActivity(id: number | string) {
-    try {
-      setDeletingActivityId(id);
-      setDebugMessage(`Deleting activity #${id}...`);
-
-      await deleteActivity(Number(id));
-
-      if (String(editingActivityId) === String(id)) {
-        resetReviewForm();
-      }
-
-      setDebugMessage("Activity deleted successfully.");
-      await loadRecentActivities(true);
-
-      Alert.alert("Deleted", `Activity #${id} was deleted successfully.`);
-    } catch (error) {
-      console.error("Delete activity error:", error);
-
-      Alert.alert(
-        "Delete failed",
-        getErrorMessage(
-          error,
-          "Could not delete this activity. Please try again."
-        )
-      );
-    } finally {
-      setDeletingActivityId(null);
-    }
+    Alert.alert("Administrator access required", "Only administrators can delete reports.");
   }
 
   const meterValue =
@@ -862,20 +870,25 @@ async function handleDownloadPdf() {
     setIsGeneratingPdf(true);
     Keyboard.dismiss();
 
-    const formatDate = (date: Date) => {
-      const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, "0");
-      const day = String(date.getDate()).padStart(2, "0");
-      return `${year}-${month}-${day}`;
-    };
-
-    const end = new Date();
-    const start = new Date();
-    start.setDate(start.getDate() - 30);
+    // Use the dates of the saved records so older activities are included and
+    // device/server clock differences cannot produce an empty date range.
+    const activityDates = recentActivities
+      .map((activity) => activity.created_at?.slice(0, 10))
+      .filter((date): date is string => Boolean(date));
+    const startDate = activityDates.length
+      ? activityDates.reduce((earliest, date) =>
+          date < earliest ? date : earliest
+        )
+      : new Date().toISOString().slice(0, 10);
+    const endDate = activityDates.length
+      ? activityDates.reduce((latest, date) =>
+          date > latest ? date : latest
+        )
+      : startDate;
 
     const result = await generatePdfReport({
-      start_date: formatDate(start),
-      end_date: formatDate(end),
+      start_date: startDate,
+      end_date: endDate,
     });
 
     const filename = result.data?.pdf;
@@ -894,10 +907,7 @@ async function handleDownloadPdf() {
     const localUri =
       `${cacheDirectory}activity-report-${Date.now()}.pdf`;
 
-    const download = await FileSystem.downloadAsync(
-      downloadUrl,
-      localUri
-    );
+    const download = await downloadPdfReport(filename, localUri);
 
     if (download.status < 200 || download.status >= 300) {
       throw new Error(
@@ -937,7 +947,6 @@ async function handleDownloadPdf() {
     <SafeAreaView style={styles.safeArea}>
       <StatusBar
         barStyle="dark-content"
-        backgroundColor={COLORS.background}
       />
 
       <ScrollView
@@ -961,6 +970,9 @@ async function handleDownloadPdf() {
             <Text style={styles.brandName}>Field Activity</Text>
             <Text style={styles.brandSubtitle}>LOGGING SYSTEM</Text>
           </View>
+          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout} accessibilityRole="button" accessibilityLabel="Sign out">
+            <Text style={styles.logoutButtonText}>Sign out</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.hero}>
@@ -991,7 +1003,7 @@ async function handleDownloadPdf() {
             value={workerId}
             onChangeText={setWorkerId}
             autoCapitalize="characters"
-            editable={!isRecording && !isBusy && !isEditing}
+            editable={false}
             returnKeyType="done"
           />
           <Text style={styles.helperText}>
@@ -1226,16 +1238,16 @@ async function handleDownloadPdf() {
                   activeOpacity={0.85}
                 >
                   <Text style={styles.photoButtonText}>
-                    {selectedPhotoUri ? "Choose Another Image" : "Choose Photo"}
+                    {selectedPhotoUris.length ? "Choose More Images" : "Choose Photos"}
                   </Text>
                 </TouchableOpacity>
 
-                {selectedPhotoUri ? (
-                  <Image
-                    source={{ uri: selectedPhotoUri }}
-                    style={styles.photoPreview}
-                    resizeMode="cover"
-                  />
+                {selectedPhotoUris.length ? (
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                    {selectedPhotoUris.map((uri) => (
+                      <Image key={uri} source={{ uri }} style={styles.photoPreview} resizeMode="cover" />
+                    ))}
+                  </View>
                 ) : uploadedPhotoFile ? (
                   <View style={styles.uploadedPhotoNotice}>
                     <Text style={styles.uploadedPhotoText}>
@@ -1247,7 +1259,7 @@ async function handleDownloadPdf() {
                   </View>
                 ) : null}
 
-                {!!selectedPhotoUri && (
+                {!!selectedPhotoUris.length && (
                   <TouchableOpacity
                     style={[
                       styles.photoButton,
@@ -1266,7 +1278,7 @@ async function handleDownloadPdf() {
                       </View>
                     ) : (
                       <Text style={styles.photoButtonText}>
-                        {uploadedPhotoFile ? "Upload Again" : "Upload Selected Photo"}
+                        {uploadedPhotoFile ? "Upload Again" : `Upload ${selectedPhotoUris.length} Photo${selectedPhotoUris.length === 1 ? "" : "s"}`}
                       </Text>
                     )}
                   </TouchableOpacity>
@@ -1486,25 +1498,6 @@ async function handleDownloadPdf() {
                       <Text style={styles.editButtonText}>✎ Edit</Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity
-                      style={[
-                        styles.deleteButton,
-                        (isBusy || isRecording || item.id == null) &&
-                          styles.disabledButton,
-                      ]}
-                      activeOpacity={0.8}
-                      disabled={isBusy || isRecording || item.id == null}
-                      onPress={() => handleDeleteActivity(item)}
-                    >
-                      {String(deletingActivityId) === String(item.id) ? (
-                        <ActivityIndicator
-                          color={COLORS.danger}
-                          size="small"
-                        />
-                      ) : (
-                        <Text style={styles.deleteButtonText}>Delete</Text>
-                      )}
-                    </TouchableOpacity>
                   </View>
                 </View>
               ))}
@@ -1618,6 +1611,19 @@ const styles = StyleSheet.create({
   headerTextContainer: {
     marginLeft: 11,
     flex: 1,
+  },
+  logoutButton: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 10,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    backgroundColor: COLORS.white,
+  },
+  logoutButtonText: {
+    color: COLORS.primaryDark,
+    fontSize: 12,
+    fontWeight: "800",
   },
   brandName: {
     color: COLORS.text,

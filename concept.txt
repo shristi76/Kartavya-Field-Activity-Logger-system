@@ -73,3 +73,5 @@ Our project uses **React Native, TypeScript, and Expo** for the mobile frontend,
  We use **Google Gemini through the Google Gen AI SDK** to translate the Hindi transcription into English and
  extract structured social-work information. The backend provides REST APIs for communication, while the system supports 
   saving reviewed activity records and generating PDF and Excel reports.
+
+

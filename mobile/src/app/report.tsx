@@ -18,7 +18,7 @@ import {
 import { Colors } from "../constants/colors";
 import ReportCard from "../components/ReportCard";
 import { FieldReport } from "../types/report";
-import { getPdfUrl } from "../services/api";
+import { getPdfDownloadUrl } from "../services/api";
 
 export default function ReportScreen() {
   const params = useLocalSearchParams<{
@@ -48,7 +48,7 @@ export default function ReportScreen() {
     }
 
     try {
-      const url = getPdfUrl(params.pdfUrl);
+      const url = getPdfDownloadUrl(params.pdfUrl);
       await Linking.openURL(url);
     } catch {
       Alert.alert(

@@ -3,3 +3,19 @@ step 2. pip install -r requirements.txt
 step 3. add api key in .env file
 step 4. run in terminal->  python app.py 
 step 5. (optional) agr koi error ata hai (jo ki ayega hi) toh chatgpt kr lena :)
+
+Admin worker ID: admin
+Admin PIN: 5512
+
+
+***************************************************************
+Project completed 
+step-1 record kroo
+step-2 ppt mai tech stack + sequence diagram banaoo (yehi mai bolu gi)
+step-3 chatgpt sai padh loo 
+step-4 inform in group
+
+
+- users stores each account. id is its primary key, and worker_id is unique so workers can sign in with their own ID. Passwords are stored as password_hash, not plain text. role distinguishes workers from admins.
+- field_logs stores activity reports. id is the primary key, and user_id links each report to its owner in users. This lets the app show workers their own records and lets admins manage records according to their role.
+Other fields store the report details, such as created_at, hindi_text, translated_text, activity, beneficiaries, and location. audio_file and photo_file store file names or paths, keeping the media itself outside the database. The photo field can hold multiple filenames for one report.

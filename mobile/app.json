@@ -1,11 +1,13 @@
 {
   "expo": {
-    "name": "Field Worker logger",
-    "slug": "field-worker-logger",
+    "name": "Field Activity logger System",
+    "slug": "field-Activity-logger System",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "android": {
+      "usesCleartextTraffic": true
+    },
     "plugins": [
       [
         "expo-audio",
@@ -13,7 +15,8 @@
           "microphonePermission": "Allow  Field Worker to access your microphone."
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      "expo-asset"
     ]
   }
 }

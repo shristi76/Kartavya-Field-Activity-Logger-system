@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in · Field Activity</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <style>
+    body{min-height:100vh;background:linear-gradient(135deg,#eff7f5,#f7f8fb);display:grid;place-items:center;padding:24px}
+    .auth-shell{width:min(100%,980px);min-height:600px;display:grid;grid-template-columns:1fr 1fr;background:white;border-radius:26px;overflow:hidden;box-shadow:0 24px 80px #183b4020}
+    .auth-aside{background:linear-gradient(145deg,#0d6868,#143f50);color:white;padding:58px 48px;display:flex;flex-direction:column;justify-content:space-between}
+    .auth-aside h1{font-size:38px;line-height:1.15;margin:52px 0 16px}.auth-aside p{color:#d5eeee;line-height:1.7}
+    .auth-main{padding:50px 52px;display:flex;flex-direction:column;justify-content:center}.auth-main h2{font-size:28px;margin:0 0 8px}.auth-main .muted{color:#63747a;margin:0 0 26px}
+    .auth-tabs{display:flex;background:#f0f4f4;padding:4px;border-radius:12px;margin-bottom:24px}.auth-tabs button{flex:1;border:0;background:transparent;padding:11px;border-radius:9px;cursor:pointer;font-weight:600;color:#5b6b70}.auth-tabs button.active{background:white;box-shadow:0 2px 8px #163b4015;color:#145d60}
+    .auth-form{display:grid;gap:15px}.auth-form label{display:grid;gap:7px;font-size:13px;font-weight:600;color:#34464c}.auth-form input{width:100%;padding:13px 14px;border:1px solid #d9e2e3;border-radius:10px;font:inherit}.auth-form input:focus{outline:2px solid #a4d6d2;border-color:#45a29c}.auth-submit{padding:14px;border:0;border-radius:10px;background:#126c6b;color:#fff;font-weight:700;font-size:15px;cursor:pointer;margin-top:4px}.auth-message{min-height:22px;color:#aa3434;font-size:13px}.auth-brand{font-weight:750;letter-spacing:.02em}.admin-note{font-size:12px;color:#718187;margin-top:18px;line-height:1.5}
+    @media(max-width:720px){.auth-shell{grid-template-columns:1fr;min-height:auto}.auth-aside{padding:25px 28px}.auth-aside h1{font-size:29px;margin:28px 0 8px}.auth-aside .aside-foot{display:none}.auth-main{padding:34px 28px}}
+  </style>
+</head>
+<body>
+  <main class="auth-shell">
+    <aside class="auth-aside"><div><div class="auth-brand">FIELD ACTIVITY · OPERATIONS</div><h1>Every field update, accounted for.</h1><p>A secure workspace for field teams to capture, review, and report their work.</p></div><div class="aside-foot">Protected access for your organisation</div></aside>
+    <section class="auth-main"><h2 id="formTitle">Welcome back</h2><p class="muted" id="formSubtitle">Sign in with your worker ID to continue.</p>
+      <div class="auth-tabs"><button class="active" id="loginTab" type="button">Sign in</button><button id="registerTab" type="button">Create account</button></div>
+      <form class="auth-form" id="authForm">
+        <label class="register-field" hidden>Full name<input name="name" autocomplete="name" placeholder="Your name"></label>
+        <label>Worker ID<input name="worker_id" autocomplete="username" required placeholder="Enter your worker ID"></label>
+        <label>4 digit PIN<input name="password" type="password" inputmode="numeric" autocomplete="current-password" required placeholder="Enter 4 digits" minlength="4" maxlength="4" pattern="[0-9]{4}"></label>
+        <label class="register-field" hidden>Organisation<input name="organization" autocomplete="organization" placeholder="Your organisation"></label>
+        <div class="auth-message" id="authMessage" role="status"></div><button class="auth-submit" id="submitButton">Sign in</button>
+      </form><p class="admin-note">Administrator accounts are provisioned by your system administrator.</p>
+    </section>
+  </main>
+  <script>
+    const form=document.querySelector('#authForm'), loginTab=document.querySelector('#loginTab'), registerTab=document.querySelector('#registerTab');let mode='login';
+    function setMode(next){mode=next;const registering=mode==='register';document.querySelectorAll('.register-field').forEach(el=>{el.hidden=!registering;el.querySelector('input').required=registering});loginTab.classList.toggle('active',!registering);registerTab.classList.toggle('active',registering);document.querySelector('#formTitle').textContent=registering?'Create your account':'Welcome back';document.querySelector('#formSubtitle').textContent=registering?'Set up your field worker access.':'Sign in with your worker ID to continue.';document.querySelector('#submitButton').textContent=registering?'Create account':'Sign in';document.querySelector('#authMessage').textContent=''}
+    loginTab.onclick=()=>setMode('login');registerTab.onclick=()=>setMode('register');
+    form.addEventListener('submit',async event=>{event.preventDefault();const button=document.querySelector('#submitButton'),message=document.querySelector('#authMessage');button.disabled=true;message.style.color='';message.textContent='';const submittedMode=mode,body=Object.fromEntries(new FormData(form));try{const response=await fetch(`/api/auth/${submittedMode}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const result=await response.json();if(!response.ok)throw new Error(result.error||'Unable to continue');if(submittedMode==='register'){setMode('login');form.querySelector('[name="password"]').value='';message.style.color='#16805a';message.textContent='Registration successful. Sign in with your worker ID and PIN.';return}sessionStorage.setItem('field_access_token',result.access_token);location.href=result.data.role==='admin'?'/admin':'/'}catch(error){message.style.color='#aa3434';message.textContent=error.message}finally{button.disabled=false}});
+  </script>
+</body></html>

@@ -29,7 +29,16 @@ PHOTO_DIR = DATA_DIR / "photos"
 # Database
 # ------------------------------------------------------------
 
-DATABASE_FILE = DATA_DIR / "field_logs.db"
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL is required. Configure a PostgreSQL connection string.")
+
+SECRET_KEY = os.getenv("SECRET_KEY", "").strip()
+if not SECRET_KEY:
+    raise RuntimeError("SECRET_KEY is required for secure authentication sessions.")
+
+ADMIN_WORKER_ID = os.getenv("ADMIN_WORKER_ID", "").strip()
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 
 
 # ------------------------------------------------------------

@@ -1,5 +1,4 @@
 import {
-  Alert,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -14,18 +13,19 @@ import { useFocusEffect } from "expo-router";
 import { router } from "expo-router";
 
 import { Colors } from "../constants/colors";
-import {
-  clearReports,
-  getReports,
-} from "../services/storage";
+import { getRecentActivities } from "../services/api";
 
 export default function HistoryScreen() {
   const [reports, setReports] =
     useState<any[]>([]);
 
   async function loadReports() {
-    const data = await getReports();
-    setReports(data);
+    try {
+      const result = await getRecentActivities(100);
+      setReports(result.data || []);
+    } catch {
+      setReports([]);
+    }
   }
 
   useFocusEffect(
@@ -33,27 +33,6 @@ export default function HistoryScreen() {
       loadReports();
     }, [])
   );
-
-  function deleteAll() {
-    Alert.alert(
-      "Clear History",
-      "Delete all saved reports?",
-      [
-        {
-          text: "Cancel",
-          style: "cancel",
-        },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            await clearReports();
-            setReports([]);
-          },
-        },
-      ]
-    );
-  }
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -85,15 +64,6 @@ export default function HistoryScreen() {
             </Text>
           </View>
 
-          {reports.length > 0 && (
-            <TouchableOpacity
-              onPress={deleteAll}
-            >
-              <Text style={styles.delete}>
-                Clear
-              </Text>
-            </TouchableOpacity>
-          )}
         </View>
 
         {reports.length === 0 ? (
@@ -130,37 +100,37 @@ export default function HistoryScreen() {
             >
               <View style={styles.cardHeader}>
                 <Text style={styles.worker}>
-                  {item.report.worker_name ||
+                  {item.worker_name ||
                     "Field Worker"}
                 </Text>
 
                 <Text style={styles.date}>
                   {formatDate(
-                    item.createdAt
+                    item.created_at
                   )}
                 </Text>
               </View>
 
               <Text style={styles.location}>
                 📍{" "}
-                {item.report.location ||
+                {item.location ||
                   "Location not mentioned"}
               </Text>
 
               <Text style={styles.activity}>
-                {item.report.activity ||
+                {item.activity ||
                   "Field activity"}
               </Text>
 
-              {item.report.people_visited !==
+              {item.beneficiaries !==
                 null &&
-                item.report.people_visited !==
+                item.beneficiaries !==
                   undefined && (
                   <Text
                     style={styles.patients}
                   >
-                    Patients visited:{" "}
-                    {item.report.people_visited}
+                    Beneficiaries:{" "}
+                    {item.beneficiaries}
                   </Text>
                 )}
             </View>

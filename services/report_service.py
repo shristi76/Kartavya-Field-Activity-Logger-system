@@ -2,6 +2,7 @@
 from pathlib import Path
 
 from fpdf import FPDF
+from PIL import Image as PILImage
 from openpyxl import Workbook
 from openpyxl.styles import (
     Font,
@@ -126,6 +127,13 @@ def _prepare_logs(logs):
         return []
 
     return [_row_to_dict(log) for log in logs]
+
+
+def _export_scope(logs, owner_id):
+    if owner_id is not None:
+        return f"user_{owner_id}_"
+    owners = {log.get("user_id") for log in logs if log.get("user_id") is not None}
+    return f"user_{next(iter(owners))}_" if len(owners) == 1 else "all_"
 
 
 def _known_numeric_total(logs, key):
@@ -376,6 +384,8 @@ def generate_pdf(
     start_date,
     end_date,
     speaker_id=None,
+    owner_id=None,
+    report_tag=None,
 ):
     """Generate a professionally formatted social-work PDF."""
     logs = _prepare_logs(logs)
@@ -664,12 +674,29 @@ def generate_pdf(
         )
 
         if photo_file:
-            photo_path = PHOTO_DIR / Path(
-                str(photo_file)
-            ).name
+            photo_names = [
+                Path(name.strip()).name
+                for name in str(photo_file).split(",")
+                if name.strip()
+            ]
 
-            if photo_path.is_file():
-                if pdf.get_y() > 225:
+            for photo_index, photo_name in enumerate(photo_names, start=1):
+                photo_path = PHOTO_DIR / photo_name
+                if not photo_path.is_file():
+                    continue
+
+                try:
+                    with PILImage.open(photo_path) as image:
+                        image_width, image_height = image.size
+                except (OSError, ValueError):
+                    continue
+
+                max_width, max_height = 170, 110
+                scale = min(max_width / image_width, max_height / image_height)
+                display_width = image_width * scale
+                display_height = image_height * scale
+
+                if pdf.get_y() + display_height + 12 > 279:
                     _pdf_add_new_page(
                         pdf,
                         font_name,
@@ -680,19 +707,17 @@ def generate_pdf(
                 pdf.ln(3)
                 pdf.set_font(font_name, "B", 10)
                 pdf.set_text_color(*NAVY)
-
                 pdf.cell(
                     0,
                     7,
-                    "Visit Photo",
+                    f"Visit Photo {photo_index}" if len(photo_names) > 1 else "Visit Photo",
                     new_x="LMARGIN",
                     new_y="NEXT",
                 )
-
                 pdf.image(
                     str(photo_path),
-                    w=100,
-                    h=0,
+                    w=display_width,
+                    h=display_height,
                 )
 
         pdf.ln(7)
@@ -704,6 +729,8 @@ def generate_pdf(
 
     filename = (
         f"Social_Work_Report_"
+        f"{_export_scope(logs, owner_id)}"
+        f"{f'{report_tag}_' if report_tag else ''}"
         f"{_safe_filename_date(start_date)}"
         f"_to_{_safe_filename_date(end_date)}.pdf"
     )
@@ -727,6 +754,8 @@ def generate_excel(
     logs,
     start_date,
     end_date,
+    owner_id=None,
+    report_tag=None,
 ):
     """Generate a styled Excel workbook with a summary dashboard."""
     logs = _prepare_logs(logs)
@@ -1056,6 +1085,8 @@ def generate_excel(
 
     filename = (
         f"Social_Work_Logs_"
+        f"{_export_scope(logs, owner_id)}"
+        f"{f'{report_tag}_' if report_tag else ''}"
         f"{_safe_filename_date(start_date)}"
         f"_to_{_safe_filename_date(end_date)}.xlsx"
     )

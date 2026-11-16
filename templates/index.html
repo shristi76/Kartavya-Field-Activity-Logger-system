@@ -18,15 +18,7 @@
       <!-- =========================
      TOP NAVIGATION
 ========================== -->
-      <header class="topbar">
-        <div class="brand">
-          <div>
-            <div class="brand-name">Field Activity</div>
-
-            <div class="brand-subtitle">Operations Workspace</div>
-          </div>
-        </div>
-      </header>
+      <header class="topbar"><div class="brand"><div><div class="brand-name">Field Activity</div><div class="brand-subtitle">Operations Workspace</div></div></div><div class="account-bar" style="display:flex;align-items:center;gap:14px;margin-left:auto"><span id="accountLabel"></span><button type="button" id="logoutButton" class="btn btn-secondary">Sign out</button></div></header>
 
       <!-- =========================
      MAIN CONTENT
@@ -37,7 +29,7 @@
           <div>
             <span class="eyebrow"> FIELD OPERATIONS </span>
 
-            <h1>Field Activity Logger</h1>
+            <h1 id="workspaceTitle">My Field Reports</h1>
 
             <p>
               Capture field updates, review extracted information, and maintain
@@ -49,7 +41,8 @@
         <!-- =========================
          DASHBOARD
     ========================== -->
-        <section class="dashboard-grid">
+        <section class="dashboard-grid" style="grid-template-columns:1fr">
+          <article class="dashboard-card admin-card" id="adminNotice" style="display:none"><div class="card-body"><strong>Administrator workspace</strong><p>All users’ records are shown. You can review, export, update, and delete any report.</p></div></article>
           <!-- =========================
              CARD 01 — FIELD WORKER
         ========================== -->
@@ -67,19 +60,19 @@
             </div>
 
             <div class="card-body">
-              <div class="form-group">
-                <label for="speakerId"> Worker ID / Name </label>
+              <div class="form-group" id="workerIdentityGroup">
+                <label for="speakerId"> Your Worker ID </label>
 
                 <input
                   type="text"
                   id="speakerId"
                   name="speakerId"
                   autocomplete="off"
-                  placeholder="Enter worker name or ID"
+                  placeholder="Your account Worker ID"
                 />
 
                 <span class="field-hint">
-                  Use the registered field worker ID or name.
+                  This is linked to your signed-in account and cannot be changed here.
                 </span>
               </div>
             </div>
@@ -88,7 +81,7 @@
           <!-- =========================
              CARD 02 — RECORDING
         ========================== -->
-          <article class="dashboard-card recording-card">
+          <article class="dashboard-card recording-card" style="display:none">
             <div class="card-header">
               <div class="card-title-area">
                 <div class="step-number">02</div>
@@ -132,7 +125,7 @@
           <!-- =========================
              CARD 03 — TRANSCRIPTION
         ========================== -->
-          <article class="dashboard-card transcription-card">
+          <article class="dashboard-card transcription-card" style="display:none">
             <div class="card-header">
               <div class="card-title-area">
                 <div class="step-number">03</div>
@@ -281,7 +274,7 @@
                 <div>
                   <h2>Recent Activities</h2>
 
-                  <p>Latest saved field activities.</p>
+                  <p id="activitySubtitle">Only your own field reports are shown.</p>
                 </div>
               </div>
 
@@ -311,19 +304,19 @@
                     <tr>
                       <th>ID</th>
                       <th>Date &amp; Time</th>
-                      <th>Worker</th>
-                      <th>Recording</th>
+                      <th>Worker / Organisation</th>
+                      <th>Report</th>
                       <th>Activity</th>
                       <th>Beneficiaries</th>
                       <th>Location</th>
-                      <th>Action</th>
+                      <th>Actions</th>
                     </tr>
                   </thead>
 
                   <tbody id="activitiesTableBody">
                     <tr>
                       <td colspan="8" class="empty-state">
-                        Loading activities...
+                        Loading your reports...
                       </td>
                     </tr>
                   </tbody>
@@ -467,6 +460,6 @@
       </footer>
     </div>
 
-    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/workspace.js', v='admin-dashboard-2') }}"></script>
   </body>
 </html>
