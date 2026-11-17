@@ -1,4 +1,3 @@
-<img width="1672" height="941" alt="Kartavya_ Empowering Communities" src="https://github.com/user-attachments/assets/bccc2e86-a3ed-453b-b779-3525d9e8e6e1" />
 
 ---
 
@@ -32,4 +31,9 @@
 
 
 <img width="893" height="861" alt="Screenshot 2026-11-10 133058" src="https://github.com/user-attachments/assets/2e365fc1-c1a1-45de-be6c-39f4706af8ce" />
+
+---
+
+<img width="491" height="697" alt="Screenshot 2026-11-10 133127" src="https://github.com/user-attachments/assets/fdb1d9a2-c026-45b1-87de-1618676ecf42" />
+
 
